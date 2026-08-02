@@ -23,6 +23,12 @@
     ui: {
       activeTab: "dashboard-tab",
       searchQuery: "",
+      filterProgram: "",
+      filterStatus: "",
+      filterOfficer: "",
+      sortKey: "FullName",
+      sortAsc: true,
+      showArchived: false,
       pagination: {
         page: 1,
         pageSize: 10
@@ -107,9 +113,13 @@
   function populateDropdownOptions() {
     const progSelect = document.getElementById("form-learner-program");
     const offSelect = document.getElementById("form-learner-officer");
-    const tickLearnerSelect = document.getElementById("form-ticket-learner");
     const tickCatSelect = document.getElementById("form-ticket-category");
     const tickOffSelect = document.getElementById("form-ticket-officer");
+
+    // Dynamic Filter Dropdowns in Learners tab
+    const filterProg = document.getElementById("learner-filter-program");
+    const filterStatus = document.getElementById("learner-filter-status");
+    const filterOfficer = document.getElementById("learner-filter-officer");
 
     if (progSelect) {
       progSelect.innerHTML = AppState.programs.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
@@ -122,6 +132,16 @@
     }
     if (tickOffSelect) {
       tickOffSelect.innerHTML = AppState.officers.map(o => `<option value="${o.id}">${o.name}</option>`).join("");
+    }
+
+    if (filterProg) {
+      filterProg.innerHTML = `<option value="">All Programs</option>` + AppState.programs.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+    }
+    if (filterStatus) {
+      filterStatus.innerHTML = `<option value="">All Statuses</option>` + AppState.statuses.map(s => `<option value="${s.id}">${s.description}</option>`).join("");
+    }
+    if (filterOfficer) {
+      filterOfficer.innerHTML = `<option value="">All Officers</option>` + AppState.officers.map(o => `<option value="${o.id}">${o.name}</option>`).join("");
     }
   }
 
@@ -144,23 +164,62 @@
           renderLearnersTable();
         }
       })
-      .apiGetAllLearners();
+      .apiGetAllLearners(true); // Load all to handle archived toggle cleanly client-side
   }
 
   /**
-   * Render paginated and filtered learners.
+   * Render paginated, filtered, and sorted learners.
    */
   function renderLearnersTable() {
     const listBody = document.getElementById("learners-list-body");
     if (!listBody) return;
 
     const query = AppState.ui.searchQuery.toLowerCase();
-    const filtered = AppState.learners.filter(l => {
-      return String(l.FullName).toLowerCase().includes(query) ||
-             String(l.Email).toLowerCase().includes(query) ||
-             String(l.LearnerID).toLowerCase().includes(query);
+
+    // 1. Filter
+    let filtered = AppState.learners.filter(l => {
+      // IsArchived check
+      const isArchived = l.IsArchived === "TRUE" || l.IsArchived === true;
+      if (AppState.ui.showArchived) {
+        if (!isArchived) return false;
+      } else {
+        if (isArchived) return false;
+      }
+
+      // Search query filter
+      const matchesSearch = String(l.FullName).toLowerCase().includes(query) ||
+                            String(l.Email).toLowerCase().includes(query) ||
+                            String(l.Phone).toLowerCase().includes(query) ||
+                            String(l.LearnerID).toLowerCase().includes(query);
+
+      // Category filters
+      const matchesProg = !AppState.ui.filterProgram || l.ProgramID === AppState.ui.filterProgram;
+      const matchesStatus = !AppState.ui.filterStatus || l.StatusID === AppState.ui.filterStatus;
+      const matchesOfficer = !AppState.ui.filterOfficer || l.OfficerID === AppState.ui.filterOfficer;
+
+      return matchesSearch && matchesProg && matchesStatus && matchesOfficer;
     });
 
+    // 2. Sort
+    filtered.sort((a, b) => {
+      let valA = a[AppState.ui.sortKey];
+      let valB = b[AppState.ui.sortKey];
+
+      // Safe numeric conversion
+      if (AppState.ui.sortKey === "Progress%") {
+        valA = parseFloat(valA || 0);
+        valB = parseFloat(valB || 0);
+      } else {
+        valA = String(valA || "").toLowerCase();
+        valB = String(valB || "").toLowerCase();
+      }
+
+      if (valA < valB) return AppState.ui.sortAsc ? -1 : 1;
+      if (valA > valB) return AppState.ui.sortAsc ? 1 : -1;
+      return 0;
+    });
+
+    // 3. Paginate
     const page = AppState.ui.pagination.page;
     const size = AppState.ui.pagination.pageSize;
     const totalPages = Math.ceil(filtered.length / size) || 1;
@@ -181,6 +240,7 @@
 
     listBody.innerHTML = paginated.map(l => {
       const progressPercent = Math.round(parseFloat(l["Progress%"] || 0) * 100);
+      const isArchived = l.IsArchived === "TRUE" || l.IsArchived === true;
       return `
         <tr>
           <td>
@@ -195,8 +255,12 @@
             <strong>${progressPercent}%</strong>
           </td>
           <td>
-            <button class="table-action edit-learner-row" data-id="${l.LearnerID}">Edit</button>
-            <button class="table-action delete-learner-row" data-id="${l.LearnerID}" style="color: var(--orange);">Archive</button>
+            ${isArchived ? `
+              <button class="table-action restore-learner-row" data-id="${l.LearnerID}" style="color: var(--primary);">Restore</button>
+            ` : `
+              <button class="table-action edit-learner-row" data-id="${l.LearnerID}">Edit</button>
+              <button class="table-action delete-learner-row" data-id="${l.LearnerID}" style="color: var(--orange);">Archive</button>
+            `}
           </td>
         </tr>
       `;
@@ -220,6 +284,13 @@
         if (confirm(`Are you sure you want to archive learner ${id}?`)) {
           archiveLearnerRow(id);
         }
+      });
+    });
+
+    document.querySelectorAll(".restore-learner-row").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        const id = e.currentTarget.getAttribute("data-id");
+        restoreLearnerRow(id);
       });
     });
   }
@@ -431,6 +502,21 @@
       .apiDeleteLearner(learnerID);
   }
 
+  function restoreLearnerRow(learnerID) {
+    showToast(`Restoring ${learnerID}...`, "info");
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          showToast("Learner successfully restored.", "success");
+          fetchLearners();
+          fetchDashboardMetrics();
+        } else {
+          showToast(response.message, "error");
+        }
+      })
+      .apiRestoreLearner(learnerID);
+  }
+
   /**
    * Action button hooks.
    */
@@ -441,6 +527,55 @@
       searchInput.addEventListener("input", (e) => {
         AppState.ui.searchQuery = e.target.value;
         AppState.ui.pagination.page = 1; // Reset to page 1
+        renderLearnersTable();
+      });
+    }
+
+    // Category Filter Selection Listeners
+    const filterProg = document.getElementById("learner-filter-program");
+    if (filterProg) {
+      filterProg.addEventListener("change", (e) => {
+        AppState.ui.filterProgram = e.target.value;
+        AppState.ui.pagination.page = 1;
+        renderLearnersTable();
+      });
+    }
+
+    const filterStatus = document.getElementById("learner-filter-status");
+    if (filterStatus) {
+      filterStatus.addEventListener("change", (e) => {
+        AppState.ui.filterStatus = e.target.value;
+        AppState.ui.pagination.page = 1;
+        renderLearnersTable();
+      });
+    }
+
+    const filterOfficer = document.getElementById("learner-filter-officer");
+    if (filterOfficer) {
+      filterOfficer.addEventListener("change", (e) => {
+        AppState.ui.filterOfficer = e.target.value;
+        AppState.ui.pagination.page = 1;
+        renderLearnersTable();
+      });
+    }
+
+    // Sort Selection Listener
+    const sortSelect = document.getElementById("learner-sort-select");
+    if (sortSelect) {
+      sortSelect.addEventListener("change", (e) => {
+        const parts = e.target.value.split(":");
+        AppState.ui.sortKey = parts[0];
+        AppState.ui.sortAsc = parts[1] === "asc";
+        renderLearnersTable();
+      });
+    }
+
+    // Show Archived Toggle
+    const archivedToggle = document.getElementById("learner-archived-toggle");
+    if (archivedToggle) {
+      archivedToggle.addEventListener("change", (e) => {
+        AppState.ui.showArchived = e.target.checked;
+        AppState.ui.pagination.page = 1;
         renderLearnersTable();
       });
     }

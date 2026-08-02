@@ -105,9 +105,40 @@
           </button>
         </div>
 
-        <!-- Search and filters -->
-        <div class="filter-bar">
-          <input type="text" id="learner-search" placeholder="Search by name, email, ID..." class="form-input">
+        <!-- Search, Sorting, Filtering and Toggle bar -->
+        <div class="filter-bar-container card" style="margin-bottom: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+          <input type="text" id="learner-search" placeholder="Search by name, email, ID, phone..." class="form-input">
+
+          <div class="flex-input-group" style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <select id="learner-filter-program" class="form-input" style="flex: 1; min-width: 100px;">
+              <option value="">All Programs</option>
+            </select>
+            <select id="learner-filter-status" class="form-input" style="flex: 1; min-width: 100px;">
+              <option value="">All Statuses</option>
+            </select>
+            <select id="learner-filter-officer" class="form-input" style="flex: 1; min-width: 100px;">
+              <option value="">All Officers</option>
+            </select>
+          </div>
+
+          <div class="flex-input-group" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <label for="learner-sort-select" style="font-size: 11px; font-weight: 500; color: var(--grey);">Sort:</label>
+              <select id="learner-sort-select" class="form-input" style="width: auto; padding: 4px 6px;">
+                <option value="FullName:asc">Name (A-Z)</option>
+                <option value="FullName:desc">Name (Z-A)</option>
+                <option value="Progress%:asc">Progress (Low-High)</option>
+                <option value="Progress%:desc">Progress (High-Low)</option>
+                <option value="EnrollmentDate:asc">Date (Oldest)</option>
+                <option value="EnrollmentDate:desc">Date (Newest)</option>
+              </select>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <input type="checkbox" id="learner-archived-toggle" style="cursor: pointer;">
+              <label for="learner-archived-toggle" style="font-size: 11px; font-weight: 500; color: var(--grey); cursor: pointer;">Show Archived Only</label>
+            </div>
+          </div>
         </div>
 
         <!-- Learners List Container -->
@@ -181,7 +212,7 @@
           <div id="verification-result-box" class="verification-box hidden"></div>
         </div>
 
-        <div class="table-container">
+        <div class="table-container" style="margin-top: 12px;">
           <table class="lms-table" id="certs-table">
             <thead>
               <tr>
