@@ -15,8 +15,8 @@ Agrodemy LMS is structured with a strict **Separation of Concerns**. This preven
 +---------------------------------------------------------------------------------+
 |                               PRESENTATION LAYER                                |
 | - Sidebar.html: Structure of the UI                                             |
-| - Sidebar.css: Branding, colors, layout, responsive design                      |
-| - Sidebar.js: Single Page Application (SPA) client controller                   |
+| - SidebarCss.html: Styling, colors, layout, responsive design wrapped in <style>|
+| - SidebarJs.html: Client SPA execution controller wrapped in <script> tags       |
 | - Components: Modal, Table, Cards, Charts, Forms, Pagination                    |
 +---------------------------------------+-----------------------------------------+
                                         |
@@ -180,14 +180,12 @@ For each backend file, follow this process:
     - Create `Settings` and paste contents of `Settings.gs`.
     - Create `Triggers` and paste contents of `Triggers.gs`.
 
-### Step 4: Paste the Frontend Templates (`.html` / `.css` / `.js` files)
-To connect the HTML sidebar and keep styling separate, you must add the HTML, CSS, and JS files as **HTML** templates in Apps Script:
-1.  Click the **+ (Add a file)** icon. Select **HTML**.
-2.  Name the file exactly `Sidebar`. Paste the code from `Sidebar.html`.
-3.  Click the **+ (Add a file)** icon. Select **HTML**.
-4.  Name the file exactly `Sidebar.css`. Paste the code from `Sidebar.css`.
-5.  Click the **+ (Add a file)** icon. Select **HTML**.
-6.  Name the file exactly `Sidebar.js`. Paste the code from `Sidebar.js`.
+### Step 4: Paste the Frontend Templates
+In Google Apps Script, we split files into separate files for clean structure. Since Apps Script only permits script files (`.gs`) and markup files (`.html`), we save our style sheets and script scripts as HTML sub-templates using an `include('filename')` scriptlet:
+
+1.  Click the **+ (Add a file)** icon. Select **HTML**. Name the file exactly `Sidebar`. Paste the code from `Sidebar.html`.
+2.  Click the **+ (Add a file)** icon. Select **HTML**. Name the file exactly `SidebarCss`. Paste the code from `SidebarCss.html`. (Do not name it with a `.css` suffix—it is saved as a native HTML file enclosing a `<style>` block).
+3.  Click the **+ (Add a file)** icon. Select **HTML**. Name the file exactly `SidebarJs`. Paste the code from `SidebarJs.html`. (Do not name it with a `.js` suffix—it is saved as a native HTML file enclosing a `<script>` block).
 
 ### Step 5: Save and Compile
 1.  Click the **Save Project** (disk) icon at the top toolbar, or press `Ctrl + S` (`Cmd + S` on Mac).
@@ -284,8 +282,8 @@ Ensure everything is configured correctly by running this test sequence:
 *   **Fix:** Log out of all accounts except your primary work Google Account, or open the Google Sheet inside a fresh **Incognito / Private browser window**.
 
 ### 3. File upload/compile fails with "Include file not found".
-*   **Cause:** One of the frontend templates (`Sidebar`, `Sidebar.css`, or `Sidebar.js`) was saved as a `.gs` script instead of an **HTML** template.
-*   **Fix:** Delete the incorrect file in Apps Script, click **Add File** -> **HTML**, name it exactly, paste the contents, and click save.
+*   **Cause:** One of the frontend templates (`Sidebar`, `SidebarCss`, or `SidebarJs`) was saved as a `.gs` script instead of an **HTML** template or has a trailing `.css`/`.js` suffix inside the Apps Script files list.
+*   **Fix:** Delete the incorrect file in Apps Script, click **Add File** -> **HTML**, name it exactly `SidebarCss` or `SidebarJs` respectively, paste the contents, and click save.
 
 ### 4. Email template displays unparsed tags like `{{FullName}}`.
 *   **Cause:** Typo in placeholder spelling inside your settings editor.
