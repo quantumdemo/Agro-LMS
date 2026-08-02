@@ -39,7 +39,7 @@ var CONFIG = {
       "LearnerID", "FullName", "Email", "Phone", "ProgramID",
       "EnrollmentDate", "CurrentModule", "Progress%", "LastLogin",
       "StatusID", "CertificateStatusID", "SupportStatusID",
-      "LastContact", "OfficerID", "Notes"
+      "LastContact", "OfficerID", "Notes", "IsArchived"
     ],
     SUPPORT: [
       "TicketID", "LearnerID", "IssueCategoryID", "Description",

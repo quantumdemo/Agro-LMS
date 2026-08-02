@@ -10,10 +10,16 @@ var LearnerModule = (function() {
 
   /**
    * Retrieves all learners inside the sheet with mapped relational names.
+   * Excludes archived learners by default.
    */
-  function getAllLearners() {
+  function getAllLearners(includeArchived) {
     try {
       var learners = SpreadsheetService.readAll(CONFIG.SHEETS.LEARNERS);
+      if (!includeArchived) {
+        learners = learners.filter(function(l) {
+          return l.IsArchived !== "TRUE" && l.IsArchived !== true;
+        });
+      }
       return createSuccessResponse("Learners retrieved successfully.", learners);
     } catch (e) {
       Logger.log("Error in LearnerModule.getAllLearners: " + e.message);
@@ -52,7 +58,8 @@ var LearnerModule = (function() {
         "SupportStatusID": learnerData.SupportStatusID ? String(learnerData.SupportStatusID).trim() : "SP01",
         "LastContact": formatDate(new Date()),
         "OfficerID": learnerData.OfficerID ? String(learnerData.OfficerID).trim() : "O001",
-        "Notes": learnerData.Notes ? String(learnerData.Notes).trim() : ""
+        "Notes": learnerData.Notes ? String(learnerData.Notes).trim() : "",
+        "IsArchived": "FALSE"
       };
 
       // 3. Batch Append
@@ -158,23 +165,29 @@ var LearnerModule = (function() {
   }
 
   /**
-   * soft deletes (archives) a learner by modifying status to 'Suspended/Withdrawn'
-   * or fully archiving as needed. We support full row deletion as clean archive.
+   * soft deletes (archives) a learner by modifying IsArchived flag to "TRUE"
    */
   function deleteLearner(learnerID) {
     try {
       if (!learnerID) return createFailureResponse("LearnerID is required.");
 
-      var success = SpreadsheetService.deleteRecord(CONFIG.SHEETS.LEARNERS, "LearnerID", learnerID);
+      var success = SpreadsheetService.updateRecord(
+        CONFIG.SHEETS.LEARNERS,
+        "LearnerID",
+        learnerID,
+        CONFIG.SCHEMAS.LEARNERS,
+        { "IsArchived": "TRUE" }
+      );
+
       if (!success) {
         return createFailureResponse("Learner not found or could not be archived.");
       }
 
       ActivityService.logActivity(
         "Learners",
-        "DELETE",
+        "ARCHIVE",
         learnerID,
-        "Archived learner record completely.",
+        "Archived learner record (IsArchived = TRUE).",
         "SUCCESS"
       );
 
@@ -185,16 +198,52 @@ var LearnerModule = (function() {
     }
   }
 
+  /**
+   * Restores a soft-archived learner.
+   */
+  function restoreLearner(learnerID) {
+    try {
+      if (!learnerID) return createFailureResponse("LearnerID is required.");
+
+      var success = SpreadsheetService.updateRecord(
+        CONFIG.SHEETS.LEARNERS,
+        "LearnerID",
+        learnerID,
+        CONFIG.SCHEMAS.LEARNERS,
+        { "IsArchived": "FALSE" }
+      );
+
+      if (!success) {
+        return createFailureResponse("Learner not found or could not be restored.");
+      }
+
+      ActivityService.logActivity(
+        "Learners",
+        "RESTORE",
+        learnerID,
+        "Restored soft-archived learner.",
+        "SUCCESS"
+      );
+
+      return createSuccessResponse("Learner successfully restored.");
+    } catch (e) {
+      Logger.log("Error in LearnerModule.restoreLearner: " + e.message);
+      return createFailureResponse("Internal error during restore.", e.message);
+    }
+  }
+
   return {
     getAllLearners: getAllLearners,
     createLearner: createLearner,
     updateLearner: updateLearner,
-    deleteLearner: deleteLearner
+    deleteLearner: deleteLearner,
+    restoreLearner: restoreLearner
   };
 })();
 
 // Public Global API Mappings called from Client
-function apiGetAllLearners() { return LearnerModule.getAllLearners(); }
+function apiGetAllLearners(includeArchived) { return LearnerModule.getAllLearners(includeArchived); }
 function apiCreateLearner(data) { return LearnerModule.createLearner(data); }
 function apiUpdateLearner(id, data) { return LearnerModule.updateLearner(id, data); }
 function apiDeleteLearner(id) { return LearnerModule.deleteLearner(id); }
+function apiRestoreLearner(id) { return LearnerModule.restoreLearner(id); }
