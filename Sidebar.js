@@ -1,0 +1,684 @@
+/**
+ * Sidebar.js
+ * Single Page Application (SPA) Client Engine & Global AppState.
+ * Manages view routing, event bindings, local caching, search filters, and API integrations.
+ *
+ * @author Jules (Lead Software Architect)
+ */
+
+(function() {
+
+  // Single Global Application State
+  const AppState = {
+    user: "Success Officer",
+    dashboard: null,
+    learners: [],
+    programs: [],
+    officers: [],
+    statuses: [],
+    categories: [],
+    tickets: [],
+    certs: [],
+    templates: {},
+    ui: {
+      activeTab: "dashboard-tab",
+      searchQuery: "",
+      pagination: {
+        page: 1,
+        pageSize: 10
+      }
+    }
+  };
+
+  // Initialization & Event Attachments
+  document.addEventListener("DOMContentLoaded", () => {
+    initViewRoutes();
+    initGlobalDataLoaders();
+    bindFormSubmissions();
+    bindActionTriggers();
+  });
+
+  /**
+   * Router and tab selection events.
+   */
+  function initViewRoutes() {
+    const tabBtns = document.querySelectorAll(".tab-btn");
+    tabBtns.forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        const targetTab = e.currentTarget.getAttribute("data-tab");
+        switchTab(targetTab);
+      });
+    });
+  }
+
+  function switchTab(tabId) {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+
+    const targetBtn = document.querySelector(`[data-tab="${tabId}"]`);
+    const targetPanel = document.getElementById(tabId);
+
+    if (targetBtn && targetPanel) {
+      targetBtn.classList.add("active");
+      targetPanel.classList.add("active");
+      AppState.ui.activeTab = tabId;
+
+      // Auto reload metrics on dashboard load
+      if (tabId === "dashboard-tab") {
+        fetchDashboardMetrics();
+      }
+    }
+  }
+
+  /**
+   * Loads initial lookups, lists, configuration variables, and updates dropdown select options.
+   */
+  function initGlobalDataLoaders() {
+    showToast("Initializing Agrodemy Console...", "info");
+
+    // Fetch Settings
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          AppState.programs = response.data.programs;
+          AppState.officers = response.data.officers;
+          AppState.statuses = response.data.learnerStatuses;
+          AppState.categories = response.data.issueCategories;
+
+          populateDropdownOptions();
+          // Load Learners and support elements next
+          fetchLearners();
+          fetchTickets();
+          fetchCertificates();
+          fetchDashboardMetrics();
+        } else {
+          showToast("Failed loading system settings: " + response.errors.join(", "), "error");
+        }
+      })
+      .withFailureHandler(err => {
+        showToast("Server Connection Fault: " + err.message, "error");
+      })
+      .apiGetSystemConfiguration();
+  }
+
+  /**
+   * Populates drop down selection values on startup.
+   */
+  function populateDropdownOptions() {
+    const progSelect = document.getElementById("form-learner-program");
+    const offSelect = document.getElementById("form-learner-officer");
+    const tickLearnerSelect = document.getElementById("form-ticket-learner");
+    const tickCatSelect = document.getElementById("form-ticket-category");
+    const tickOffSelect = document.getElementById("form-ticket-officer");
+
+    if (progSelect) {
+      progSelect.innerHTML = AppState.programs.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+    }
+    if (offSelect) {
+      offSelect.innerHTML = AppState.officers.map(o => `<option value="${o.id}">${o.name}</option>`).join("");
+    }
+    if (tickCatSelect) {
+      tickCatSelect.innerHTML = AppState.categories.map(c => `<option value="${c.id}">${c.category}</option>`).join("");
+    }
+    if (tickOffSelect) {
+      tickOffSelect.innerHTML = AppState.officers.map(o => `<option value="${o.id}">${o.name}</option>`).join("");
+    }
+  }
+
+  function updateTicketLearnerDropdown() {
+    const tickLearnerSelect = document.getElementById("form-ticket-learner");
+    if (tickLearnerSelect) {
+      tickLearnerSelect.innerHTML = AppState.learners.map(l => `<option value="${l.LearnerID}">${l.FullName} (${l.LearnerID})</option>`).join("");
+    }
+  }
+
+  /**
+   * Fetches real-time learners and populates the learners grid table.
+   */
+  function fetchLearners() {
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          AppState.learners = response.data;
+          updateTicketLearnerDropdown();
+          renderLearnersTable();
+        }
+      })
+      .apiGetAllLearners();
+  }
+
+  /**
+   * Render paginated and filtered learners.
+   */
+  function renderLearnersTable() {
+    const listBody = document.getElementById("learners-list-body");
+    if (!listBody) return;
+
+    const query = AppState.ui.searchQuery.toLowerCase();
+    const filtered = AppState.learners.filter(l => {
+      return String(l.FullName).toLowerCase().includes(query) ||
+             String(l.Email).toLowerCase().includes(query) ||
+             String(l.LearnerID).toLowerCase().includes(query);
+    });
+
+    const page = AppState.ui.pagination.page;
+    const size = AppState.ui.pagination.pageSize;
+    const totalPages = Math.ceil(filtered.length / size) || 1;
+
+    // Safety boundaries
+    const startIndex = (page - 1) * size;
+    const paginated = filtered.slice(startIndex, startIndex + size);
+
+    // Update buttons state
+    document.getElementById("prev-page").disabled = page <= 1;
+    document.getElementById("next-page").disabled = page >= totalPages;
+    document.getElementById("page-info-label").textContent = `Page ${page} of ${totalPages}`;
+
+    if (paginated.length === 0) {
+      listBody.innerHTML = `<tr><td colspan="4" class="text-center">No learners found matching the filters.</td></tr>`;
+      return;
+    }
+
+    listBody.innerHTML = paginated.map(l => {
+      const progressPercent = Math.round(parseFloat(l["Progress%"] || 0) * 100);
+      return `
+        <tr>
+          <td>
+            <strong>${l.FullName}</strong><br>
+            <small style="color: var(--grey);">${l.LearnerID}</small>
+          </td>
+          <td>${l.ProgramID}</td>
+          <td>
+            <div style="background-color: #E2E2E2; border-radius: 4px; height: 8px; width: 60px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 4px;">
+              <div style="background-color: var(--primary); width: ${progressPercent}%; height: 100%;"></div>
+            </div>
+            <strong>${progressPercent}%</strong>
+          </td>
+          <td>
+            <button class="table-action edit-learner-row" data-id="${l.LearnerID}">Edit</button>
+            <button class="table-action delete-learner-row" data-id="${l.LearnerID}" style="color: var(--orange);">Archive</button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    // Bind sub-button events inside the dynamically rendered table
+    bindTableActionTriggers();
+  }
+
+  function bindTableActionTriggers() {
+    document.querySelectorAll(".edit-learner-row").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        const id = e.currentTarget.getAttribute("data-id");
+        openEditLearnerModal(id);
+      });
+    });
+
+    document.querySelectorAll(".delete-learner-row").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        const id = e.currentTarget.getAttribute("data-id");
+        if (confirm(`Are you sure you want to archive learner ${id}?`)) {
+          archiveLearnerRow(id);
+        }
+      });
+    });
+  }
+
+  /**
+   * Fetches Support Log database entries and populates UI.
+   */
+  function fetchTickets() {
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          AppState.tickets = response.data;
+          renderTicketsTable();
+        }
+      })
+      .apiGetAllTickets();
+  }
+
+  function renderTicketsTable() {
+    const listBody = document.getElementById("tickets-list-body");
+    if (!listBody) return;
+
+    if (AppState.tickets.length === 0) {
+      listBody.innerHTML = `<tr><td colspan="4" class="text-center">No active support tickets found.</td></tr>`;
+      return;
+    }
+
+    listBody.innerHTML = AppState.tickets.map(t => {
+      return `
+        <tr>
+          <td><strong>${t.TicketID}</strong></td>
+          <td>${t.LearnerID}</td>
+          <td><span style="font-weight: 600; color: ${t.Priority === 'High' ? 'var(--orange)' : 'inherit'};">${t.Priority}</span></td>
+          <td>
+            <span style="padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: 600; background-color: ${t.TicketStatus === 'Open' ? '#FFF2EB' : '#F1F1F1'}; color: ${t.TicketStatus === 'Open' ? 'var(--orange)' : 'var(--grey)'};">
+              ${t.TicketStatus}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  /**
+   * Fetches Certificate issued log.
+   */
+  function fetchCertificates() {
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          AppState.certs = response.data;
+          renderCertificatesTable();
+        }
+      })
+      .apiGetAllCertificates();
+  }
+
+  function renderCertificatesTable() {
+    const listBody = document.getElementById("certs-list-body");
+    if (!listBody) return;
+
+    if (AppState.certs.length === 0) {
+      listBody.innerHTML = `<tr><td colspan="4" class="text-center">No issued certificates yet.</td></tr>`;
+      return;
+    }
+
+    listBody.innerHTML = AppState.certs.map(c => {
+      return `
+        <tr>
+          <td><strong style="color: var(--primary);">${c.CertificateID}</strong></td>
+          <td>${c.LearnerID}</td>
+          <td>${c.ProgramID}</td>
+          <td>${c.CertificateDate}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  /**
+   * Fetches system dashboard analytics.
+   */
+  function fetchDashboardMetrics() {
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          const kpi = response.data.kpis;
+          document.getElementById("kpi-total-learners").textContent = kpi.totalLearners;
+          document.getElementById("kpi-active-learners").textContent = kpi.activeLearners;
+          document.getElementById("kpi-at-risk").textContent = kpi.atRiskLearners;
+          document.getElementById("kpi-open-tickets").textContent = kpi.openTickets;
+
+          // Render activities lists
+          const activityFeedList = document.getElementById("activity-feed-list");
+          if (activityFeedList) {
+            if (response.data.recentActivity.length === 0) {
+              activityFeedList.innerHTML = `<li class="empty-feed">No recorded activities yet.</li>`;
+            } else {
+              activityFeedList.innerHTML = response.data.recentActivity.map(act => {
+                return `
+                  <li>
+                    <strong>[${act.Module}] ${act.Action}</strong> - ${act.Details}<br>
+                    <small style="color: var(--grey);">${act.Timestamp}</small>
+                  </li>
+                `;
+              }).join("");
+            }
+          }
+        }
+      })
+      .apiGetDashboardMetrics();
+  }
+
+  /**
+   * Form Actions submissions and modal routing.
+   */
+  function bindFormSubmissions() {
+    // 1. Learner Modal Submit
+    const lForm = document.getElementById("learner-form");
+    if (lForm) {
+      lForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        submitLearnerForm();
+      });
+    }
+
+    // 2. Ticket Modal Submit
+    const tForm = document.getElementById("ticket-form");
+    if (tForm) {
+      tForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        submitTicketForm();
+      });
+    }
+  }
+
+  function submitLearnerForm() {
+    const id = document.getElementById("form-learner-id").value;
+    const payload = {
+      FullName: document.getElementById("form-learner-name").value,
+      Email: document.getElementById("form-learner-email").value,
+      Phone: document.getElementById("form-learner-phone").value,
+      ProgramID: document.getElementById("form-learner-program").value,
+      CurrentModule: document.getElementById("form-learner-module").value,
+      "Progress%": parseFloat(document.getElementById("form-learner-progress").value) || 0.0,
+      StatusID: document.getElementById("form-learner-status").value,
+      OfficerID: document.getElementById("form-learner-officer").value,
+      Notes: document.getElementById("form-learner-notes").value
+    };
+
+    showToast("Saving learner details...", "info");
+
+    const handler = (response) => {
+      if (response.success) {
+        showToast("Learner profile saved successfully!", "success");
+        closeModal("learner-modal");
+        fetchLearners();
+        fetchDashboardMetrics();
+      } else {
+        showToast("Validation Error: " + response.errors.join("<br>"), "error");
+      }
+    };
+
+    if (id) {
+      google.script.run.withSuccessHandler(handler).apiUpdateLearner(id, payload);
+    } else {
+      google.script.run.withSuccessHandler(handler).apiCreateLearner(payload);
+    }
+  }
+
+  function submitTicketForm() {
+    const payload = {
+      LearnerID: document.getElementById("form-ticket-learner").value,
+      IssueCategoryID: document.getElementById("form-ticket-category").value,
+      Priority: document.getElementById("form-ticket-priority").value,
+      Description: document.getElementById("form-ticket-description").value,
+      TicketStatus: document.getElementById("form-ticket-status").value,
+      OfficerID: document.getElementById("form-ticket-officer").value,
+      Notes: document.getElementById("form-ticket-notes").value
+    };
+
+    showToast("Submitting support log...", "info");
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          showToast("Support ticket created and logs tracked!", "success");
+          closeModal("ticket-modal");
+          fetchTickets();
+          fetchLearners(); // reload since support status has changed
+          fetchDashboardMetrics();
+        } else {
+          showToast("Error creating ticket: " + response.errors.join(", "), "error");
+        }
+      })
+      .apiCreateTicket(payload);
+  }
+
+  function archiveLearnerRow(learnerID) {
+    showToast(`Archiving ${learnerID}...`, "info");
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          showToast("Learner successfully archived.", "success");
+          fetchLearners();
+          fetchDashboardMetrics();
+        } else {
+          showToast(response.message, "error");
+        }
+      })
+      .apiDeleteLearner(learnerID);
+  }
+
+  /**
+   * Action button hooks.
+   */
+  function bindActionTriggers() {
+    // Search filters
+    const searchInput = document.getElementById("learner-search");
+    if (searchInput) {
+      searchInput.addEventListener("input", (e) => {
+        AppState.ui.searchQuery = e.target.value;
+        AppState.ui.pagination.page = 1; // Reset to page 1
+        renderLearnersTable();
+      });
+    }
+
+    // Modal launchers
+    const addLearnerBtn = document.getElementById("add-learner-btn");
+    if (addLearnerBtn) {
+      addLearnerBtn.addEventListener("click", () => {
+        document.getElementById("learner-form").reset();
+        document.getElementById("form-learner-id").value = "";
+        document.getElementById("learner-modal-title").textContent = "Onboard New Learner";
+        document.getElementById("save-learner-form-btn").textContent = "Onboard Learner";
+        // Enable email and name fields
+        document.getElementById("form-learner-email").disabled = false;
+        openModal("learner-modal");
+      });
+    }
+
+    const newTicketBtn = document.getElementById("new-ticket-btn");
+    if (newTicketBtn) {
+      newTicketBtn.addEventListener("click", () => {
+        document.getElementById("ticket-form").reset();
+        openModal("ticket-modal");
+      });
+    }
+
+    // Modal closing bindings
+    document.querySelectorAll("[data-close]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        const modalId = e.currentTarget.getAttribute("data-close");
+        closeModal(modalId);
+      });
+    });
+
+    // Pagination events
+    document.getElementById("prev-page").addEventListener("click", () => {
+      if (AppState.ui.pagination.page > 1) {
+        AppState.ui.pagination.page--;
+        renderLearnersTable();
+      }
+    });
+
+    document.getElementById("next-page").addEventListener("click", () => {
+      AppState.ui.pagination.page++;
+      renderLearnersTable();
+    });
+
+    // Verification engine click
+    const verifyBtn = document.getElementById("verify-cert-submit-btn");
+    if (verifyBtn) {
+      verifyBtn.addEventListener("click", () => {
+        const certVal = document.getElementById("verify-cert-id-input").value;
+        verifyCertificateCode(certVal);
+      });
+    }
+
+    // Template selection loaded on demand
+    const templateSelect = document.getElementById("settings-template-select");
+    if (templateSelect) {
+      templateSelect.addEventListener("change", (e) => {
+        loadTemplateIntoSettings(e.target.value);
+      });
+      // trigger first option load
+      loadTemplateIntoSettings(templateSelect.value);
+    }
+
+    // Save customized email templates
+    const saveTemplateBtn = document.getElementById("save-templates-btn");
+    if (saveTemplateBtn) {
+      saveTemplateBtn.addEventListener("click", () => {
+        saveConfiguredTemplate();
+      });
+    }
+
+    // Generate CSV reports
+    const reportBtn = document.getElementById("generate-report-btn");
+    if (reportBtn) {
+      reportBtn.addEventListener("click", () => {
+        const rSelect = document.getElementById("settings-report-select").value;
+        triggerReportCSVGeneration(rSelect);
+      });
+    }
+  }
+
+  function openEditLearnerModal(learnerID) {
+    const l = AppState.learners.find(lrn => lrn.LearnerID === learnerID);
+    if (!l) return;
+
+    document.getElementById("learner-modal-title").textContent = `Edit Profile - ${l.LearnerID}`;
+    document.getElementById("save-learner-form-btn").textContent = "Update Profile";
+    document.getElementById("form-learner-id").value = l.LearnerID;
+
+    document.getElementById("form-learner-name").value = l.FullName;
+    document.getElementById("form-learner-email").value = l.Email;
+    // Email cannot be modified once set to preserve integrity
+    document.getElementById("form-learner-email").disabled = true;
+    document.getElementById("form-learner-phone").value = l.Phone;
+    document.getElementById("form-learner-program").value = l.ProgramID;
+    document.getElementById("form-learner-module").value = l.CurrentModule;
+    document.getElementById("form-learner-progress").value = l["Progress%"];
+    document.getElementById("form-learner-status").value = l.StatusID;
+    document.getElementById("form-learner-officer").value = l.OfficerID;
+    document.getElementById("form-learner-notes").value = l.Notes || "";
+
+    openModal("learner-modal");
+  }
+
+  function verifyCertificateCode(certID) {
+    if (!certID || certID.trim() === "") {
+      showToast("Please input a certificate ID first.", "error");
+      return;
+    }
+
+    const resultBox = document.getElementById("verification-result-box");
+    resultBox.classList.remove("hidden", "valid", "invalid");
+    resultBox.innerHTML = "Verifying certificate legitimacy...";
+
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          resultBox.classList.add("valid");
+          resultBox.innerHTML = `
+            <strong>Legitimate Certificate Verified!</strong><br>
+            Certificate ID: ${response.data.certificate.CertificateID}<br>
+            Recipient Learner: ${response.data.certificate.LearnerID}<br>
+            Program Completion: ${response.data.certificate.ProgramID}<br>
+            Issue Date: ${response.data.certificate.CertificateDate}
+          `;
+        } else {
+          resultBox.classList.add("invalid");
+          resultBox.innerHTML = `<strong>Verification Failed:</strong> ${response.message}`;
+        }
+      })
+      .apiVerifyCertificate(certID);
+  }
+
+  function loadTemplateIntoSettings(templateKey) {
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          const templates = response.data.emailTemplates;
+          const match = templates.find(t => t.template === templateKey);
+          if (match) {
+            document.getElementById("settings-template-subject").value = match.subject;
+            document.getElementById("settings-template-body").value = match.body;
+          }
+        }
+      })
+      .apiGetSystemConfiguration();
+  }
+
+  function saveConfiguredTemplate() {
+    const key = document.getElementById("settings-template-select").value;
+    const sub = document.getElementById("settings-template-subject").value;
+    const bod = document.getElementById("settings-template-body").value;
+
+    showToast("Saving notification template overrides...", "info");
+
+    // First retrieve current settings, substitute the active option template, and write back
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          const templates = response.data.emailTemplates;
+          const index = templates.findIndex(t => t.template === key);
+          if (index !== -1) {
+            templates[index].subject = sub;
+            templates[index].body = bod;
+          } else {
+            templates.push({ template: key, subject: sub, body: bod });
+          }
+
+          google.script.run
+            .withSuccessHandler(res => {
+              if (res.success) {
+                showToast("Notification template successfully saved to Settings!", "success");
+              } else {
+                showToast("Failed to write to settings: " + res.message, "error");
+              }
+            })
+            .apiSaveEmailTemplates(templates);
+        }
+      })
+      .apiGetSystemConfiguration();
+  }
+
+  function triggerReportCSVGeneration(reportType) {
+    showToast("Generating dynamic CSV data payload...", "info");
+    google.script.run
+      .withSuccessHandler(response => {
+        if (response.success) {
+          showToast("Report compiled. Launching local system download...", "success");
+          // Generate an in-browser download link to save CSV cleanly
+          const blob = new Blob([response.data.csv], { type: "text/csv;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.setAttribute("href", url);
+          link.setAttribute("download", response.data.filename);
+          link.style.visibility = "hidden";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } else {
+          showToast("Failed to compile CSV report: " + response.message, "error");
+        }
+      })
+      .apiGenerateReport(reportType);
+  }
+
+  /**
+   * Modal overlays opening & closing.
+   */
+  function openModal(modalId) {
+    document.getElementById("modal-container").classList.remove("hidden");
+    document.getElementById(modalId).classList.remove("hidden");
+  }
+
+  function closeModal(modalId) {
+    document.getElementById("modal-container").classList.add("hidden");
+    document.getElementById(modalId).classList.add("hidden");
+  }
+
+  /**
+   * Status Toast alerts manager.
+   */
+  function showToast(message, type = "success") {
+    const toast = document.getElementById("toast-message-box");
+    if (!toast) return;
+
+    toast.classList.remove("hidden", "success", "error", "info");
+    toast.innerHTML = message;
+
+    if (type === "success") toast.classList.add("success");
+    else if (type === "error") toast.classList.add("error");
+
+    toast.classList.remove("hidden");
+    setTimeout(() => {
+      toast.classList.add("hidden");
+    }, 4500);
+  }
+
+})();
