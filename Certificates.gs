@@ -23,6 +23,7 @@ var CertificateModule = (function() {
 
   /**
    * Generates a certificate for an eligible learner.
+   * If a template document ID is present in Settings, it copies and builds a custom PDF document.
    */
   function issueCertificate(learnerID, programID) {
     try {
@@ -44,7 +45,41 @@ var CertificateModule = (function() {
 
       var nextRecordID = IDGenerator.generateNextID(CONFIG.SHEETS.CERTIFICATES, "CRT-");
       var nextCertID = IDGenerator.generateNextID(CONFIG.SHEETS.CERTIFICATES, "CERT-");
+
+      var learner = findLearnerRecord(learnerID);
+      var learnerName = learner ? learner.FullName : "Learner";
+
+      // OPTION 9: Dynamic Google Docs PDF template translation
       var certLink = "https://verification.agrodemy.org/verify?id=" + nextCertID;
+
+      try {
+        // Look up Doc template ID from Settings sheet if present
+        var templateDocID = getTemplateDocIDFromSettings();
+        if (templateDocID && templateDocID !== "N/A" && templateDocID !== "") {
+          var templateFile = DriveApp.getFileById(templateDocID);
+          var copy = templateFile.makeCopy("Certificate - " + learnerName + " [" + nextCertID + "]");
+          var copyId = copy.getId();
+
+          var doc = DocumentApp.openById(copyId);
+          var body = doc.getBody();
+          body.replaceText("{{FullName}}", learnerName);
+          body.replaceText("{{ProgramName}}", programID);
+          body.replaceText("{{CertificateID}}", nextCertID);
+          body.replaceText("{{DateIssued}}", formatDate(new Date()));
+          doc.saveAndClose();
+
+          // Generate PDF download link
+          var pdfBlob = copy.getAs("application/pdf");
+          var pdfFile = DriveApp.createFile(pdfBlob);
+          pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          certLink = pdfFile.getUrl();
+
+          // Trash the temporary Google Doc copy to keep drive clean
+          copy.setTrashed(true);
+        }
+      } catch (errDoc) {
+        Logger.log("Dynamic PDF creation bypassed or failed (falling back to standard link): " + errDoc.message);
+      }
 
       var newCert = {
         "CertRecordID": nextRecordID,
@@ -77,12 +112,11 @@ var CertificateModule = (function() {
         "Certificates",
         "ISSUE_CERTIFICATE",
         nextCertID,
-        "Issued certificate for learner " + learnerID + " for " + programID,
+        "Issued certificate for learner " + learnerID + " for " + programID + " | Link: " + certLink,
         "SUCCESS"
       );
 
       // Trigger automated congrats email template
-      var learner = findLearnerRecord(learnerID);
       if (learner) {
         EmailService.sendTemplateEmail(learner.Email, "Certificate", {
           "FullName": learner.FullName,
@@ -97,6 +131,27 @@ var CertificateModule = (function() {
       Logger.log("Error in CertificateModule.issueCertificate: " + e.message);
       return createFailureResponse("Failed to issue certificate.", e.message);
     }
+  }
+
+  /**
+   * Helper to fetch Template ID from Settings worksheet.
+   */
+  function getTemplateDocIDFromSettings() {
+    try {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName(CONFIG.SHEETS.SETTINGS);
+      if (!sheet) return "";
+
+      var data = sheet.getRange(1, 1, sheet.getLastRow(), 2).getValues();
+      for (var r = 0; r < data.length; r++) {
+        if (String(data[r][0]).trim() === "CertificateTemplateID") {
+          return String(data[r][1]).trim();
+        }
+      }
+    } catch (e) {
+      Logger.log("Error finding template doc ID: " + e.message);
+    }
+    return "";
   }
 
   /**

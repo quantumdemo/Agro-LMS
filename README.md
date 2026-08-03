@@ -181,11 +181,17 @@ For each backend file, follow this process:
     - Create `Triggers` and paste contents of `Triggers.gs`.
 
 ### Step 4: Paste the Frontend Templates
-In Google Apps Script, we split files into separate files for clean structure. Since Apps Script only permits script files (`.gs`) and markup files (`.html`), we save our style sheets and script scripts as HTML sub-templates using an `include('filename')` scriptlet:
+In Google Apps Script, we split files into separate templates for clean architecture. Since Google Apps Script only permits Script files (`.gs`) and HTML files (`.html`), creating files with `.css` or `.js` extensions directly in the script editor is **not supported by Google**.
 
+To overcome this, we use the **Split-Template Pattern**:
+- We save stylesheets inside an HTML file wrapped in `<style>` tags (e.g. `SidebarCss.html`).
+- We save JavaScript inside an HTML file wrapped in `<script>` tags (e.g. `SidebarJs.html`).
+- We then use our custom, server-side `include('filename')` scriptlet helper inside the main template (`Sidebar.html`) to compile and render them at runtime.
+
+#### How to paste them:
 1.  Click the **+ (Add a file)** icon. Select **HTML**. Name the file exactly `Sidebar`. Paste the code from `Sidebar.html`.
-2.  Click the **+ (Add a file)** icon. Select **HTML**. Name the file exactly `SidebarCss`. Paste the code from `SidebarCss.html`. (Do not name it with a `.css` suffix—it is saved as a native HTML file enclosing a `<style>` block).
-3.  Click the **+ (Add a file)** icon. Select **HTML**. Name the file exactly `SidebarJs`. Paste the code from `SidebarJs.html`. (Do not name it with a `.js` suffix—it is saved as a native HTML file enclosing a `<script>` block).
+2.  Click the **+ (Add a file)** icon. Select **HTML**. Name the file exactly `SidebarCss` (do not add a `.css` suffix—the editor appends `.html` automatically). Paste the code from `SidebarCss.html`.
+3.  Click the **+ (Add a file)** icon. Select **HTML**. Name the file exactly `SidebarJs` (do not add a `.js` suffix—the editor appends `.html` automatically). Paste the code from `SidebarJs.html`.
 
 ### Step 5: Save and Compile
 1.  Click the **Save Project** (disk) icon at the top toolbar, or press `Ctrl + S` (`Cmd + S` on Mac).
