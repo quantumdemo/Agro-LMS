@@ -66,6 +66,112 @@ var EmailService = (function() {
         Logger.log("Dynamic header fetch failed, using fallback placeholders only: " + errCol.message);
       }
 
+      // 1b. Fetch ticket details if TicketID is present
+      if (replacements && replacements.TicketID) {
+        try {
+          var tickets = SpreadsheetService.readAll(CONFIG.SHEETS.SUPPORT);
+          var foundTicket = null;
+          for (var t = 0; t < tickets.length; t++) {
+            if (String(tickets[t].TicketID).trim().toLowerCase() === String(replacements.TicketID).trim().toLowerCase()) {
+              foundTicket = tickets[t];
+              break;
+            }
+          }
+          if (foundTicket) {
+            for (var tKey in foundTicket) {
+              if (foundTicket.hasOwnProperty(tKey) && dynamicReplacements[tKey] === undefined) {
+                dynamicReplacements[tKey] = foundTicket[tKey];
+              }
+            }
+          }
+        } catch (errTicket) {
+          Logger.log("Ticket fetch for placeholders failed: " + errTicket.message);
+        }
+      }
+
+      // 1c. Resolve master list configuration details (Programs, Officers, Categories, Statuses)
+      var systemConfig = null;
+      try {
+        var configResponse = SettingsModule.getSystemConfiguration();
+        if (configResponse.success) {
+          systemConfig = configResponse.data;
+        }
+      } catch (eConfig) {
+        Logger.log("Could not load system configurations for email replacements: " + eConfig.message);
+      }
+
+      // 1d. Handle and resolve specific placeholder aliases
+      // Program / Programme Name resolution
+      var rawProgramID = dynamicReplacements["ProgramID"] || (foundLearner ? foundLearner.ProgramID : "");
+      var resolvedProgramName = rawProgramID;
+      if (systemConfig && systemConfig.programs) {
+        for (var p = 0; p < systemConfig.programs.length; p++) {
+          if (String(systemConfig.programs[p].id).trim().toLowerCase() === String(rawProgramID).trim().toLowerCase()) {
+            resolvedProgramName = systemConfig.programs[p].name;
+            break;
+          }
+        }
+      }
+      dynamicReplacements["Programme"] = resolvedProgramName;
+      dynamicReplacements["ProgramName"] = resolvedProgramName;
+
+      // Officer Name resolution
+      var rawOfficerID = dynamicReplacements["OfficerID"] || (foundLearner ? foundLearner.OfficerID : "");
+      var resolvedOfficerName = rawOfficerID;
+      if (systemConfig && systemConfig.officers) {
+        for (var o = 0; o < systemConfig.officers.length; o++) {
+          if (String(systemConfig.officers[o].id).trim().toLowerCase() === String(rawOfficerID).trim().toLowerCase()) {
+            resolvedOfficerName = systemConfig.officers[o].name;
+            break;
+          }
+        }
+      }
+      dynamicReplacements["OfficerName"] = resolvedOfficerName;
+
+      // Issue Category resolution
+      var rawCategoryID = dynamicReplacements["IssueCategoryID"] || "";
+      var resolvedCategory = rawCategoryID;
+      if (systemConfig && systemConfig.issueCategories) {
+        for (var c_idx = 0; c_idx < systemConfig.issueCategories.length; c_idx++) {
+          if (String(systemConfig.issueCategories[c_idx].id).trim().toLowerCase() === String(rawCategoryID).trim().toLowerCase()) {
+            resolvedCategory = systemConfig.issueCategories[c_idx].category;
+            break;
+          }
+        }
+      }
+      dynamicReplacements["IssueCategory"] = resolvedCategory;
+
+      // Progress integer resolution
+      var progressVal = dynamicReplacements["Progress%"] || (foundLearner ? foundLearner["Progress%"] : "0");
+      var floatProgress = parseFloat(progressVal) || 0;
+      if (progressVal && String(progressVal).indexOf("%") !== -1) {
+        floatProgress = parseFloat(progressVal.replace("%", "")) / 100;
+      }
+      dynamicReplacements["Progress"] = Math.round(floatProgress * 100);
+
+      // Status resolution
+      var resolvedStatus = dynamicReplacements["TicketStatus"] || "";
+      if (!resolvedStatus && systemConfig && systemConfig.learnerStatuses && foundLearner) {
+        var rawStatusID = foundLearner.StatusID;
+        for (var s = 0; s < systemConfig.learnerStatuses.length; s++) {
+          if (String(systemConfig.learnerStatuses[s].id).trim().toLowerCase() === String(rawStatusID).trim().toLowerCase()) {
+            resolvedStatus = systemConfig.learnerStatuses[s].description;
+            break;
+          }
+        }
+      }
+      if (!resolvedStatus && foundLearner) {
+        resolvedStatus = foundLearner.StatusID;
+      }
+      dynamicReplacements["Status"] = resolvedStatus || "Active";
+
+      // Issue Date resolution
+      dynamicReplacements["IssueDate"] = (replacements && (replacements.CertificateDate || replacements.IssueDate)) || formatDate(new Date());
+
+      // Global constants
+      dynamicReplacements["SupportEmail"] = "support@agrodemy.org";
+      dynamicReplacements["PortalURL"] = "https://lms.agrodemy.org";
+
       // Load templates from database settings
       var templates = getCachedTemplates();
       var template = templates[templateName];
