@@ -558,49 +558,6 @@
       };
     }
 
-    // Reactive handler to update table on search/filter changes
-    const applyReactiveFilters = () => {
-      const searchInput = document.getElementById("learner-search");
-      AppState.ui.searchQuery = searchInput ? searchInput.value.trim() : "";
-
-      const filterProg = document.getElementById("learner-filter-program");
-      const filterStatus = document.getElementById("learner-filter-status");
-      const filterOfficer = document.getElementById("learner-filter-officer");
-
-      AppState.ui.filterProgram = filterProg ? filterProg.value : "";
-      AppState.ui.filterStatus = filterStatus ? filterStatus.value : "";
-      AppState.ui.filterOfficer = filterOfficer ? filterOfficer.value : "";
-
-      AppState.ui.pagination.page = 1;
-      renderLearnersTable();
-    };
-
-    // Bind event listeners reactively
-    const searchInput = document.getElementById("learner-search");
-    if (searchInput) {
-      searchInput.addEventListener("input", debounce(applyReactiveFilters, 250));
-    }
-
-    const filterProg = document.getElementById("learner-filter-program");
-    if (filterProg) {
-      filterProg.addEventListener("change", applyReactiveFilters);
-    }
-
-    const filterStatus = document.getElementById("learner-filter-status");
-    if (filterStatus) {
-      filterStatus.addEventListener("change", applyReactiveFilters);
-    }
-
-    const filterOfficer = document.getElementById("learner-filter-officer");
-    if (filterOfficer) {
-      filterOfficer.addEventListener("change", applyReactiveFilters);
-    }
-
-    // Hide manual trigger search button if it exists or reuse it
-    const searchTriggerBtn = document.getElementById("learner-search-trigger-btn");
-    if (searchTriggerBtn) {
-      searchTriggerBtn.style.display = "none";
-    }
 
     // Sort Selection Listener
     const sortSelect = document.getElementById("learner-sort-select");

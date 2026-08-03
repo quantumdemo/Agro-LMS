@@ -113,6 +113,22 @@ var DashboardModule = (function() {
       // Update the physical spreadsheet Dashboard sheet cells dynamically as well
       updatePhysicalDashboardSheet(responseData);
 
+      // READ values directly from physical sheet to guarantee perfect synchronization
+      try {
+        var dSheet = ss.getSheetByName(CONFIG.SHEETS.DASHBOARD);
+        if (dSheet) {
+          var kpiValues = dSheet.getRange("B5:B10").getValues();
+          responseData.kpis.totalLearners = Number(kpiValues[0][0]) || 0;
+          responseData.kpis.activeLearners = Number(kpiValues[1][0]) || 0;
+          responseData.kpis.completedLearners = Number(kpiValues[2][0]) || 0;
+          responseData.kpis.atRiskLearners = Number(kpiValues[3][0]) || 0;
+          responseData.kpis.openTickets = Number(kpiValues[4][0]) || 0;
+          responseData.kpis.issuedCertificates = Number(kpiValues[5][0]) || 0;
+        }
+      } catch (readErr) {
+        Logger.log("Error reading synchronized physical KPI metrics: " + readErr.message);
+      }
+
       return createSuccessResponse("Dashboard metrics aggregated successfully.", responseData);
     } catch (e) {
       Logger.log("Error in DashboardModule.getDashboardMetrics: " + e.message);
@@ -250,6 +266,30 @@ var DashboardModule = (function() {
         .setOption("height", 240)
         .build();
       sheet.insertChart(priorityChart);
+
+      // 5.5 Learner Directory & Filter Center starting at A44
+      sheet.getRange("A44").setValue("LEARNER DIRECTORY & SUCCESS FILTER CENTER").setFontSize(12).setFontWeight("bold").setFontColor("#152848");
+
+      // Seed cell A45 with query formula to fetch active learners
+      sheet.getRange("A45").setFormula("=QUERY(Learners!A1:P, \"SELECT A, B, C, D, E, G, H, J, N WHERE P = 'FALSE'\", 1)");
+
+      // Format headers of query result range at A45:I45
+      sheet.getRange("A45:I45")
+        .setBackground(CONFIG.COLORS.PRIMARY)
+        .setFontColor("#FFFFFF")
+        .setFontWeight("bold");
+
+      // Apply native sheet filter for instant ad-hoc filtering
+      try {
+        var existingFilter = sheet.getFilter();
+        if (existingFilter) {
+          existingFilter.remove();
+        }
+        var filterRange = sheet.getRange("A45:I1000");
+        filterRange.createFilter();
+      } catch (fErr) {
+        Logger.log("Could not establish native sheet filter: " + fErr.message);
+      }
 
       // 6. Automatically resize all columns on Dashboard sheet to look gorgeous
       var lastCol = sheet.getLastColumn();
