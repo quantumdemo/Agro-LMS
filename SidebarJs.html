@@ -379,15 +379,29 @@
   /**
    * Fetches system dashboard analytics.
    */
-  function fetchDashboardMetrics() {
+  function fetchDashboardMetrics(isManualRefresh = false) {
+    const refreshBtn = document.getElementById("refresh-dashboard-btn");
+    const refreshIcon = document.getElementById("refresh-icon");
+
+    if (isManualRefresh) {
+      if (refreshIcon) refreshIcon.classList.add("spin-animation");
+      if (refreshBtn) refreshBtn.disabled = true;
+      showToast("Refreshing Dashboard metrics...", "info");
+    }
+
     google.script.run
       .withSuccessHandler(response => {
+        if (isManualRefresh) {
+          if (refreshIcon) refreshIcon.classList.remove("spin-animation");
+          if (refreshBtn) refreshBtn.disabled = false;
+        }
+
         if (response.success) {
           const kpi = response.data.kpis;
-          document.getElementById("kpi-total-learners").textContent = kpi.totalLearners || 0;
-          document.getElementById("kpi-active-learners").textContent = kpi.activeLearners || 0;
-          document.getElementById("kpi-at-risk").textContent = kpi.atRiskLearners || 0;
-          document.getElementById("kpi-open-tickets").textContent = kpi.openTickets || 0;
+          document.getElementById("kpi-total-learners").textContent = kpi.totalLearners !== undefined ? kpi.totalLearners : 0;
+          document.getElementById("kpi-active-learners").textContent = kpi.activeLearners !== undefined ? kpi.activeLearners : 0;
+          document.getElementById("kpi-at-risk").textContent = kpi.atRiskLearners !== undefined ? kpi.atRiskLearners : 0;
+          document.getElementById("kpi-open-tickets").textContent = kpi.openTickets !== undefined ? kpi.openTickets : 0;
 
           // Update priority pills
           const priority = kpi.priority || { High: 0, Medium: 0, Low: 0 };
@@ -401,7 +415,7 @@
           // Render activities lists
           const activityFeedList = document.getElementById("activity-feed-list");
           if (activityFeedList) {
-            if (response.data.recentActivity.length === 0) {
+            if (!response.data.recentActivity || response.data.recentActivity.length === 0) {
               activityFeedList.innerHTML = `<li class="empty-feed">No recorded audited actions yet.</li>`;
             } else {
               activityFeedList.innerHTML = response.data.recentActivity.map(act => {
@@ -424,7 +438,22 @@
               }).join("");
             }
           }
+
+          if (isManualRefresh) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            showToast(`Dashboard refreshed successfully.<br>Last updated: ${timeStr}`, "success");
+          }
+        } else {
+          showToast("Failed to refresh dashboard: " + (response.errors ? response.errors.join(", ") : response.message), "error");
         }
+      })
+      .withFailureHandler(err => {
+        if (isManualRefresh) {
+          if (refreshIcon) refreshIcon.classList.remove("spin-animation");
+          if (refreshBtn) refreshBtn.disabled = false;
+        }
+        showToast("Error updating dashboard: " + err.message, "error");
       })
       .apiGetDashboardMetrics();
   }
@@ -577,6 +606,14 @@
         AppState.ui.showArchived = e.target.checked;
         AppState.ui.pagination.page = 1;
         renderLearnersTable();
+      });
+    }
+
+    // Refresh Dashboard click event
+    const refreshDashBtn = document.getElementById("refresh-dashboard-btn");
+    if (refreshDashBtn) {
+      refreshDashBtn.addEventListener("click", () => {
+        fetchDashboardMetrics(true);
       });
     }
 

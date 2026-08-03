@@ -13,6 +13,7 @@ var DashboardModule = (function() {
    */
   function getDashboardMetrics() {
     try {
+      var ss = SpreadsheetApp.getActiveSpreadsheet(); // Fixed undefined 'ss' reference error
       var learners = SpreadsheetService.readAll(CONFIG.SHEETS.LEARNERS);
       var tickets = SpreadsheetService.readAll(CONFIG.SHEETS.SUPPORT);
       var certs = SpreadsheetService.readAll(CONFIG.SHEETS.CERTIFICATES);
@@ -24,37 +25,51 @@ var DashboardModule = (function() {
       var atRiskLearners = 0;
 
       var programsDistribution = {};
-      var statusDistribution = {
-        "Active": 0,
-        "Completed": 0,
-        "At Risk": 0,
-        "Suspended": 0,
-        "Withdrawn": 0,
-        "Archived": 0
-      };
-
-      // Mappings
-      var statusLabels = {
-        "ST01": "Active",
-        "ST02": "Completed",
-        "ST03": "At Risk",
-        "ST04": "Suspended",
-        "ST05": "Withdrawn"
-      };
+      var statusDistribution = {};
+      var certStatusDistribution = {};
+      var enrollmentTrend = {};
 
       var programLabels = {};
+      var statusLabels = {};
+      var certStatusLabels = {};
+
+      // 1. Dynamic Settings Lookup Resolution (Zero hardcoding)
       try {
         var configResult = SettingsModule.getSystemConfiguration();
-        if (configResult.success && configResult.data.programs) {
-          for (var pIdx = 0; pIdx < configResult.data.programs.length; pIdx++) {
-            var prg = configResult.data.programs[pIdx];
-            programLabels[prg.id] = prg.name;
+        if (configResult.success && configResult.data) {
+          // Programs
+          if (configResult.data.programs) {
+            for (var pIdx = 0; pIdx < configResult.data.programs.length; pIdx++) {
+              var prg = configResult.data.programs[pIdx];
+              programLabels[prg.id] = prg.name;
+              programsDistribution[prg.name] = 0; // Pre-initialize
+            }
+          }
+          // Learner Statuses
+          if (configResult.data.learnerStatuses) {
+            for (var sIdx = 0; sIdx < configResult.data.learnerStatuses.length; sIdx++) {
+              var st = configResult.data.learnerStatuses[sIdx];
+              statusLabels[st.id] = st.description;
+              statusDistribution[st.description] = 0; // Pre-initialize
+            }
+          }
+          // Certificate Statuses
+          if (configResult.data.certificateStatuses) {
+            for (var cIdx = 0; cIdx < configResult.data.certificateStatuses.length; cIdx++) {
+              var cst = configResult.data.certificateStatuses[cIdx];
+              certStatusLabels[cst.id] = cst.description;
+              certStatusDistribution[cst.description] = 0; // Pre-initialize
+            }
           }
         }
-      } catch (ePrg) {
-        Logger.log("Could not load program labels: " + ePrg.message);
+      } catch (eConfig) {
+        Logger.log("Could not load dynamic configurations: " + eConfig.message);
       }
 
+      // Always ensure we have "Archived" representation
+      statusDistribution["Archived"] = 0;
+
+      // 2. Aggregate Learners
       for (var i = 0; i < learners.length; i++) {
         var l = learners[i];
         var isArchived = l.IsArchived === "TRUE" || l.IsArchived === true;
@@ -77,20 +92,52 @@ var DashboardModule = (function() {
         var progID = String(l.ProgramID).trim();
         var progLabel = programLabels[progID] || progID;
         programsDistribution[progLabel] = (programsDistribution[progLabel] || 0) + 1;
+
+        // Process Monthly Enrolment Trend
+        var eDateStr = l.EnrollmentDate;
+        if (eDateStr) {
+          var eDate = new Date(eDateStr);
+          if (!isNaN(eDate.getTime())) {
+            var year = eDate.getFullYear();
+            var month = eDate.getMonth() + 1;
+            var monthStr = month < 10 ? "0" + month : String(month);
+            var trendKey = year + "-" + monthStr;
+            enrollmentTrend[trendKey] = (enrollmentTrend[trendKey] || 0) + 1;
+          }
+        }
       }
 
-      var openTickets = tickets.filter(function(t) { return t.TicketStatus === "Open" || t.TicketStatus === "In Progress"; }).length;
-      var issuedCerts = certs.filter(function(c) { return c.CertificateStatusID === "C03" || c.CertificateStatusID === "Issued"; }).length;
+      // 3. Aggregate Tickets (Open, Pending, In Progress)
+      var openTickets = tickets.filter(function(t) {
+        var status = String(t.TicketStatus).trim().toLowerCase();
+        return status === "open" || status === "in progress" || status === "pending";
+      }).length;
 
       var priorityCounts = { "High": 0, "Medium": 0, "Low": 0 };
       for (var j = 0; j < tickets.length; j++) {
         var t = tickets[j];
-        if (t.TicketStatus === "Open" || t.TicketStatus === "In Progress") {
+        var tStatus = String(t.TicketStatus).trim().toLowerCase();
+        if (tStatus === "open" || tStatus === "in progress" || tStatus === "pending") {
           var p = String(t.Priority).trim();
+          // Capitalize first letter to handle casing differences gracefully
+          p = p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
           if (priorityCounts.hasOwnProperty(p)) {
             priorityCounts[p]++;
           }
         }
+      }
+
+      // 4. Aggregate Certificates
+      var issuedCerts = certs.filter(function(c) {
+        var status = String(c.CertificateStatusID).trim().toLowerCase();
+        return status === "c03" || status === "issued";
+      }).length;
+
+      for (var k = 0; k < certs.length; k++) {
+        var c = certs[k];
+        var cStatusID = String(c.CertificateStatusID).trim();
+        var cStatusLabel = certStatusLabels[cStatusID] || cStatusID;
+        certStatusDistribution[cStatusLabel] = (certStatusDistribution[cStatusLabel] || 0) + 1;
       }
 
       var responseData = {
@@ -105,7 +152,9 @@ var DashboardModule = (function() {
         },
         distributions: {
           programs: programsDistribution,
-          status: statusDistribution
+          status: statusDistribution,
+          certStatus: certStatusDistribution,
+          enrollmentTrend: enrollmentTrend
         },
         recentActivity: logs.slice(0, 5) // Last 5 logs
       };
@@ -178,14 +227,12 @@ var DashboardModule = (function() {
       // 4. Construct backing data tables starting at row 32
       // Status Distribution Table at A32
       var statusTableHeaders = [["Status Type", "Learners Count"]];
-      var statusTableValues = [
-        ["Active", metrics.distributions.status["Active"] || 0],
-        ["Completed", metrics.distributions.status["Completed"] || 0],
-        ["At Risk", metrics.distributions.status["At Risk"] || 0],
-        ["Suspended", metrics.distributions.status["Suspended"] || 0],
-        ["Withdrawn", metrics.distributions.status["Withdrawn"] || 0],
-        ["Archived", metrics.distributions.status["Archived"] || 0]
-      ];
+      var statusTableValues = [];
+      for (var statusName in metrics.distributions.status) {
+        if (metrics.distributions.status.hasOwnProperty(statusName)) {
+          statusTableValues.push([statusName, metrics.distributions.status[statusName]]);
+        }
+      }
       sheet.getRange("A32:B32").setValues(statusTableHeaders).setBackground(CONFIG.COLORS.PRIMARY).setFontColor("#FFFFFF").setFontWeight("bold");
       sheet.getRange(33, 1, statusTableValues.length, 2).setValues(statusTableValues);
       sheet.getRange(32, 1, statusTableValues.length + 1, 2).setBorder(true, true, true, true, true, true);
@@ -218,6 +265,36 @@ var DashboardModule = (function() {
       sheet.getRange(33, 9, priorityTableValues.length, 2).setValues(priorityTableValues);
       sheet.getRange(32, 9, priorityTableValues.length + 1, 2).setBorder(true, true, true, true, true, true);
 
+      // Certificate Status Distribution Table at M32
+      var certTableHeaders = [["Certificate Status", "Count"]];
+      var certTableValues = [];
+      for (var cStatusName in metrics.distributions.certStatus) {
+        if (metrics.distributions.certStatus.hasOwnProperty(cStatusName)) {
+          certTableValues.push([cStatusName, metrics.distributions.certStatus[cStatusName]]);
+        }
+      }
+      if (certTableValues.length === 0) {
+        certTableValues.push(["No Certificate Data", 0]);
+      }
+      sheet.getRange("M32:N32").setValues(certTableHeaders).setBackground(CONFIG.COLORS.PRIMARY).setFontColor("#FFFFFF").setFontWeight("bold");
+      sheet.getRange(33, 13, certTableValues.length, 2).setValues(certTableValues);
+      sheet.getRange(32, 13, certTableValues.length + 1, 2).setBorder(true, true, true, true, true, true);
+
+      // Monthly Enrolment Trend Table at Q32
+      var trendTableHeaders = [["Month Year", "New Enrolments"]];
+      var sortedMonths = Object.keys(metrics.distributions.enrollmentTrend).sort();
+      var trendValues = [];
+      for (var mIdx = 0; mIdx < sortedMonths.length; mIdx++) {
+        var mKey = sortedMonths[mIdx];
+        trendValues.push([mKey, metrics.distributions.enrollmentTrend[mKey]]);
+      }
+      if (trendValues.length === 0) {
+        trendValues.push(["No Data", 0]);
+      }
+      sheet.getRange("Q32:R32").setValues(trendTableHeaders).setBackground(CONFIG.COLORS.PRIMARY).setFontColor("#FFFFFF").setFontWeight("bold");
+      sheet.getRange(33, 17, trendValues.length, 2).setValues(trendValues);
+      sheet.getRange(32, 17, trendValues.length + 1, 2).setBorder(true, true, true, true, true, true);
+
       // 5. Insert Embedded Charts at Row 12
       // Status Donut Pie Chart at A12
       var statusRange = sheet.getRange(32, 1, statusTableValues.length + 1, 2);
@@ -245,7 +322,7 @@ var DashboardModule = (function() {
         .setChartType(Charts.ChartType.COLUMN)
         .addRange(programRange)
         .setPosition(12, 5, 0, 0)
-        .setOption("title", "Program Enrollments (Sort Desc)")
+        .setOption("title", "Program Enrollments")
         .setOption("legend", { position: "none" })
         .setOption("colors", [CONFIG.COLORS.DARK])
         .setOption("width", 320)
@@ -266,6 +343,32 @@ var DashboardModule = (function() {
         .setOption("height", 240)
         .build();
       sheet.insertChart(priorityChart);
+
+      // Certificate Status Pie Chart at M12
+      var certRange = sheet.getRange(32, 13, certTableValues.length + 1, 2);
+      var certChart = sheet.newChart()
+        .setChartType(Charts.ChartType.PIE)
+        .addRange(certRange)
+        .setPosition(12, 13, 0, 0)
+        .setOption("title", "Certificate Status Distribution")
+        .setOption("width", 320)
+        .setOption("height", 240)
+        .build();
+      sheet.insertChart(certChart);
+
+      // Monthly Enrolment Trend Line Chart at Q12
+      var trendRange = sheet.getRange(32, 17, trendValues.length + 1, 2);
+      var trendChart = sheet.newChart()
+        .setChartType(Charts.ChartType.LINE)
+        .addRange(trendRange)
+        .setPosition(12, 17, 0, 0)
+        .setOption("title", "Monthly Enrolment Trend")
+        .setOption("legend", { position: "none" })
+        .setOption("colors", [CONFIG.COLORS.PRIMARY])
+        .setOption("width", 320)
+        .setOption("height", 240)
+        .build();
+      sheet.insertChart(trendChart);
 
       // 5.5 Learner Directory & Filter Center starting at A44
       sheet.getRange("A44").setValue("LEARNER DIRECTORY & SUCCESS FILTER CENTER").setFontSize(12).setFontWeight("bold").setFontColor("#152848");
