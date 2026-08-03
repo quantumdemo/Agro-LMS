@@ -58,54 +58,8 @@
             <span class="material-icons" id="refresh-icon">refresh</span>
           </button>
         </div>
-        <!-- Card grid placeholders -->
-        <div class="kpi-grid">
-          <div class="kpi-card info">
-            <span class="material-icons kpi-icon">group</span>
-            <div class="kpi-info">
-              <span class="kpi-value" id="kpi-total-learners">0</span>
-              <span class="kpi-label">Total Enrolled</span>
-            </div>
-          </div>
-          <div class="kpi-card success">
-            <span class="material-icons kpi-icon">task_alt</span>
-            <div class="kpi-info">
-              <span class="kpi-value" id="kpi-active-learners">0</span>
-              <span class="kpi-label">Active Learning</span>
-            </div>
-          </div>
-          <div class="kpi-card warning">
-            <span class="material-icons kpi-icon">report_problem</span>
-            <div class="kpi-info">
-              <span class="kpi-value" id="kpi-at-risk">0</span>
-              <span class="kpi-label">At Risk</span>
-            </div>
-          </div>
-          <div class="kpi-card error">
-            <span class="material-icons kpi-icon">confirmation_number</span>
-            <div class="kpi-info">
-              <span class="kpi-value" id="kpi-open-tickets">0</span>
-              <span class="kpi-label">Open Tickets</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tickets by Priority -->
-        <div class="priority-pills-box card" style="margin-bottom: 16px; padding: 10px;">
-          <h4 style="font-size: 11px; text-transform: uppercase; margin-bottom: 6px; color: var(--dark); font-weight: 600;">Tickets By Priority</h4>
-          <div style="display: flex; gap: 8px;">
-            <span id="pill-priority-high" style="padding: 4px 8px; border-radius: 4px; font-weight: bold; background-color: rgba(255, 105, 0, 0.1); color: var(--orange); font-size: 11px;">High: 0</span>
-            <span id="pill-priority-medium" style="padding: 4px 8px; border-radius: 4px; font-weight: bold; background-color: rgba(255, 215, 55, 0.15); color: #B38600; font-size: 11px;">Medium: 0</span>
-            <span id="pill-priority-low" style="padding: 4px 8px; border-radius: 4px; font-weight: bold; background-color: rgba(38, 173, 56, 0.1); color: var(--primary); font-size: 11px;">Low: 0</span>
-          </div>
-        </div>
-
-        <!-- Recent Activities Feed -->
-        <div class="activity-box">
-          <h4>Recent Audited Actions</h4>
-          <ul class="activity-feed" id="activity-feed-list">
-            <li class="empty-feed">No recorded audited actions yet.</li>
-          </ul>
+        <div class="card" style="padding: 20px; text-align: center;">
+          <p style="color: var(--grey); font-size: 14px; margin-bottom: 10px;">Click the button above to update and refresh all charts, metrics, and data tables on the physical Dashboard worksheet.</p>
         </div>
       </section>
 
@@ -118,27 +72,6 @@
           </button>
         </div>
 
-        <!-- Sorting and Toggle bar -->
-        <div class="filter-bar-container card" style="margin-bottom: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
-          <div class="flex-input-group" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 4px;">
-              <label for="learner-sort-select" style="font-size: 11px; font-weight: 500; color: var(--grey);">Sort:</label>
-              <select id="learner-sort-select" class="form-input" style="width: auto; padding: 4px 6px;">
-                <option value="FullName:asc">Name (A-Z)</option>
-                <option value="FullName:desc">Name (Z-A)</option>
-                <option value="Progress%:asc">Progress (Low-High)</option>
-                <option value="Progress%:desc">Progress (High-Low)</option>
-                <option value="EnrollmentDate:asc">Date (Oldest)</option>
-                <option value="EnrollmentDate:desc">Date (Newest)</option>
-              </select>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <input type="checkbox" id="learner-archived-toggle" style="cursor: pointer;">
-              <label for="learner-archived-toggle" style="font-size: 11px; font-weight: 500; color: var(--grey); cursor: pointer;">Show Archived Only</label>
-            </div>
-          </div>
-        </div>
 
         <!-- Learners List Container -->
         <div class="table-container">
