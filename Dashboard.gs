@@ -162,6 +162,9 @@ var DashboardModule = (function() {
       // Update the physical spreadsheet Dashboard sheet cells dynamically as well
       updatePhysicalDashboardSheet(responseData);
 
+      // Force Spreadsheet synchronization and cell value evaluation before reading
+      SpreadsheetApp.flush();
+
       // READ values directly from physical sheet to guarantee perfect synchronization
       try {
         var dSheet = ss.getSheetByName(CONFIG.SHEETS.DASHBOARD);
@@ -411,3 +414,4 @@ var DashboardModule = (function() {
 
 // Public Global API mapping
 function apiGetDashboardMetrics() { return DashboardModule.getDashboardMetrics(); }
+function apiRefreshDashboard() { return DashboardModule.getDashboardMetrics(); }
