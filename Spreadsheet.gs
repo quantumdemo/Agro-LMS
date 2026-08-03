@@ -48,6 +48,20 @@ var SpreadsheetService = (function() {
   }
 
   /**
+   * Helper to automatically resize sheet columns to fit content perfectly.
+   */
+  function autoResizeSheet(sheet) {
+    try {
+      var lastCol = sheet.getLastColumn();
+      if (lastCol > 0) {
+        sheet.autoResizeColumns(1, lastCol);
+      }
+    } catch (err) {
+      Logger.log("Error in SpreadsheetService.autoResizeSheet: " + err.message);
+    }
+  }
+
+  /**
    * Appends an array of record objects to a worksheet in a single batch operation.
    */
   function appendRecords(sheetName, schema, records) {
@@ -70,6 +84,7 @@ var SpreadsheetService = (function() {
       if (rowsToWrite.length > 0) {
         var lastRow = sheet.getLastRow();
         sheet.getRange(lastRow + 1, 1, rowsToWrite.length, schema.length).setValues(rowsToWrite);
+        autoResizeSheet(sheet);
       }
       return true;
     } catch (e) {
@@ -119,6 +134,7 @@ var SpreadsheetService = (function() {
 
       var slicedValues = targetRowValues.slice(0, schema.length);
       sheet.getRange(targetRowIndex, 1, 1, schema.length).setValues([slicedValues]);
+      autoResizeSheet(sheet);
       return true;
     } catch (e) {
       Logger.log("Error in SpreadsheetService.updateRecord(" + sheetName + "): " + e.message);
@@ -149,6 +165,7 @@ var SpreadsheetService = (function() {
 
       if (targetRow !== -1) {
         sheet.deleteRow(targetRow);
+        autoResizeSheet(sheet);
         return true;
       }
       return false;

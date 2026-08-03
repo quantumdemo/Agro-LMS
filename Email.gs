@@ -17,6 +17,55 @@ var EmailService = (function() {
         return createFailureResponse("Invalid recipient email.");
       }
 
+      // 1. Fetch dynamic learner attributes to support generic column placeholders
+      var dynamicReplacements = {};
+      if (replacements) {
+        // Copy initial replacements
+        for (var k in replacements) {
+          if (replacements.hasOwnProperty(k)) {
+            dynamicReplacements[k] = replacements[k];
+          }
+        }
+      }
+
+      // Try to read full record of the learner matching recipientEmail or LearnerID if provided
+      var lookupVal = recipientEmail;
+      var lookupCol = "Email";
+      if (replacements && replacements.LearnerID) {
+        lookupVal = replacements.LearnerID;
+        lookupCol = "LearnerID";
+      }
+
+      try {
+        var learners = SpreadsheetService.readAll(CONFIG.SHEETS.LEARNERS);
+        var foundLearner = null;
+        for (var i = 0; i < learners.length; i++) {
+          if (String(learners[i][lookupCol]).trim().toLowerCase() === String(lookupVal).trim().toLowerCase()) {
+            foundLearner = learners[i];
+            break;
+          }
+        }
+
+        if (foundLearner) {
+          // Auto-map ALL columns from the Learners sheet dynamically
+          for (var col in foundLearner) {
+            if (foundLearner.hasOwnProperty(col)) {
+              var val = foundLearner[col];
+              if (col === "Progress%") {
+                // Support both progress replacement tags
+                var floatVal = parseFloat(val) || 0;
+                dynamicReplacements["Progress%"] = Math.round(floatVal * 100) + "%";
+                dynamicReplacements["Progress%_Raw"] = floatVal;
+              } else {
+                dynamicReplacements[col] = val;
+              }
+            }
+          }
+        }
+      } catch (errCol) {
+        Logger.log("Dynamic header fetch failed, using fallback placeholders only: " + errCol.message);
+      }
+
       // Load templates from database settings
       var templates = getCachedTemplates();
       var template = templates[templateName];
@@ -25,8 +74,8 @@ var EmailService = (function() {
         template = getFallbackTemplate(templateName);
       }
 
-      var substitutedSubject = substitutePlaceholders(template.Subject, replacements);
-      var substitutedBody = substitutePlaceholders(template.Body, replacements);
+      var substitutedSubject = substitutePlaceholders(template.Subject, dynamicReplacements);
+      var substitutedBody = substitutePlaceholders(template.Body, dynamicReplacements);
 
       MailApp.sendEmail({
         to: recipientEmail,
