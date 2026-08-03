@@ -188,7 +188,8 @@
       }
 
       // Search query filter
-      const matchesSearch = String(l.FullName).toLowerCase().includes(query) ||
+      const matchesSearch = !query ||
+                            String(l.FullName).toLowerCase().includes(query) ||
                             String(l.Email).toLowerCase().includes(query) ||
                             String(l.Phone).toLowerCase().includes(query) ||
                             String(l.LearnerID).toLowerCase().includes(query);
@@ -387,7 +388,7 @@
           const activityFeedList = document.getElementById("activity-feed-list");
           if (activityFeedList) {
             if (response.data.recentActivity.length === 0) {
-              activityFeedList.innerHTML = `<li class="empty-feed">No recorded activities yet.</li>`;
+              activityFeedList.innerHTML = `<li class="empty-feed">No recorded audited actions yet.</li>`;
             } else {
               activityFeedList.innerHTML = response.data.recentActivity.map(act => {
                 return `
@@ -447,6 +448,8 @@
       if (response.success) {
         showToast("Learner profile saved successfully!", "success");
         closeModal("learner-modal");
+
+        // Dynamic re-fetch and refresh views instantly
         fetchLearners();
         fetchDashboardMetrics();
       } else {
@@ -522,41 +525,24 @@
    * Action button hooks.
    */
   function bindActionTriggers() {
-    // Search filters
-    const searchInput = document.getElementById("learner-search");
-    if (searchInput) {
-      searchInput.addEventListener("input", (e) => {
-        AppState.ui.searchQuery = e.target.value;
-        AppState.ui.pagination.page = 1; // Reset to page 1
-        renderLearnersTable();
-      });
-    }
+    // Search Button Click (manual search trigger for reliable execution)
+    const searchTriggerBtn = document.getElementById("learner-search-trigger-btn");
+    if (searchTriggerBtn) {
+      searchTriggerBtn.addEventListener("click", () => {
+        const searchInput = document.getElementById("learner-search");
+        AppState.ui.searchQuery = searchInput ? searchInput.value : "";
 
-    // Category Filter Selection Listeners
-    const filterProg = document.getElementById("learner-filter-program");
-    if (filterProg) {
-      filterProg.addEventListener("change", (e) => {
-        AppState.ui.filterProgram = e.target.value;
+        const filterProg = document.getElementById("learner-filter-program");
+        const filterStatus = document.getElementById("learner-filter-status");
+        const filterOfficer = document.getElementById("learner-filter-officer");
+
+        AppState.ui.filterProgram = filterProg ? filterProg.value : "";
+        AppState.ui.filterStatus = filterStatus ? filterStatus.value : "";
+        AppState.ui.filterOfficer = filterOfficer ? filterOfficer.value : "";
+
         AppState.ui.pagination.page = 1;
         renderLearnersTable();
-      });
-    }
-
-    const filterStatus = document.getElementById("learner-filter-status");
-    if (filterStatus) {
-      filterStatus.addEventListener("change", (e) => {
-        AppState.ui.filterStatus = e.target.value;
-        AppState.ui.pagination.page = 1;
-        renderLearnersTable();
-      });
-    }
-
-    const filterOfficer = document.getElementById("learner-filter-officer");
-    if (filterOfficer) {
-      filterOfficer.addEventListener("change", (e) => {
-        AppState.ui.filterOfficer = e.target.value;
-        AppState.ui.pagination.page = 1;
-        renderLearnersTable();
+        showToast("Filter/Search Applied", "success");
       });
     }
 

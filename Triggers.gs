@@ -121,6 +121,8 @@ function runInitializationFlow() {
  */
 function seedSettingsWorksheet(sheet) {
   var elements = [
+    ["CertificateTemplateID", "N/A", ""],
+    ["", "", ""],
     ["Programs", "", ""],
     ["ProgramID", "ProgramName", ""],
     ["P001", "Career Agribusiness Certification", ""],
