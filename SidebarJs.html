@@ -37,6 +37,40 @@
     }
   };
 
+  // Client-Side Cache State matching Server State
+  const DashboardState = {
+    summary: null
+  };
+
+  // Promisified Dashboard API Client Manager
+  const DashboardAPI = {
+    /**
+     * Triggers backend refresh and fetches latest KPI statistics.
+     * @returns {Promise<Object>} The API success envelope
+     */
+    refresh: function() {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          .apiRefreshDashboard();
+      });
+    },
+
+    /**
+     * Retrieves the latest cached dashboard insights without forcing a rebuild.
+     * @returns {Promise<Object>} The API success envelope
+     */
+    getSummary: function() {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          .apiGetDashboardMetrics();
+      });
+    }
+  };
+
   // Initialization & Event Attachments
   document.addEventListener("DOMContentLoaded", () => {
     initViewRoutes();
@@ -377,9 +411,57 @@
   }
 
   /**
-   * Fetches system dashboard analytics.
+   * Dedicated DOM update handler for KPI cards, priority pills, and activities feed.
    */
-  function fetchDashboardMetrics(isManualRefresh = false) {
+  function renderDashboardStatistics(data) {
+    if (!data || !data.kpis) return;
+
+    const kpi = data.kpis;
+    document.getElementById("kpi-total-learners").textContent = kpi.totalLearners !== undefined ? kpi.totalLearners : 0;
+    document.getElementById("kpi-active-learners").textContent = kpi.activeLearners !== undefined ? kpi.activeLearners : 0;
+    document.getElementById("kpi-at-risk").textContent = kpi.atRiskLearners !== undefined ? kpi.atRiskLearners : 0;
+    document.getElementById("kpi-open-tickets").textContent = kpi.openTickets !== undefined ? kpi.openTickets : 0;
+
+    // Update priority pills
+    const priority = kpi.priority || { High: 0, Medium: 0, Low: 0 };
+    const highPill = document.getElementById("pill-priority-high");
+    const mediumPill = document.getElementById("pill-priority-medium");
+    const lowPill = document.getElementById("pill-priority-low");
+    if (highPill) highPill.textContent = `High: ${priority.High || 0}`;
+    if (mediumPill) mediumPill.textContent = `Medium: ${priority.Medium || 0}`;
+    if (lowPill) lowPill.textContent = `Low: ${priority.Low || 0}`;
+
+    // Render activities lists
+    const activityFeedList = document.getElementById("activity-feed-list");
+    if (activityFeedList) {
+      if (!data.recentActivity || data.recentActivity.length === 0) {
+        activityFeedList.innerHTML = `<li class="empty-feed">No recorded audited actions yet.</li>`;
+      } else {
+        activityFeedList.innerHTML = data.recentActivity.map(act => {
+          let formattedTime = "";
+          if (act.Timestamp) {
+            const date = new Date(act.Timestamp);
+            if (!isNaN(date.getTime())) {
+              formattedTime = date.toLocaleString();
+            } else {
+              formattedTime = String(act.Timestamp);
+            }
+          }
+          return `
+            <li>
+              <strong>${act.Action || ""}</strong><br>
+              <small style="color: var(--grey);">${formattedTime}</small>
+            </li>
+          `;
+        }).join("");
+      }
+    }
+  }
+
+  /**
+   * Refreshes the spreadsheet data from the client, updates local state, and immediately renders.
+   */
+  async function refreshDashboardStatistics(isManualRefresh = false) {
     const refreshBtn = document.getElementById("refresh-dashboard-btn");
     const refreshIcon = document.getElementById("refresh-icon");
 
@@ -389,73 +471,65 @@
       showToast("Refreshing Dashboard metrics...", "info");
     }
 
-    google.script.run
-      .withSuccessHandler(response => {
+    try {
+      const response = await DashboardAPI.refresh();
+
+      if (isManualRefresh) {
+        if (refreshIcon) refreshIcon.classList.remove("spin-animation");
+        if (refreshBtn) refreshBtn.disabled = false;
+      }
+
+      if (response && response.success) {
+        // Update client-side cached state
+        DashboardState.summary = response.data;
+        AppState.dashboard = response.data; // Align AppState as well
+
+        // Render to DOM immediately
+        renderDashboardStatistics(DashboardState.summary);
+
         if (isManualRefresh) {
-          if (refreshIcon) refreshIcon.classList.remove("spin-animation");
-          if (refreshBtn) refreshBtn.disabled = false;
+          const now = new Date();
+          const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          showToast(`Dashboard refreshed successfully.<br>Last updated: ${timeStr}`, "success");
         }
+      } else {
+        const errorMsg = response && response.errors ? response.errors.join(", ") : (response ? response.message : "Unknown server error");
+        showToast("Failed to refresh dashboard: " + errorMsg, "error");
+      }
+    } catch (err) {
+      if (isManualRefresh) {
+        if (refreshIcon) refreshIcon.classList.remove("spin-animation");
+        if (refreshBtn) refreshBtn.disabled = false;
+      }
+      showToast("Error updating dashboard: " + err.message, "error");
+    }
+  }
 
-        if (response.success) {
-          const kpi = response.data.kpis;
-          document.getElementById("kpi-total-learners").textContent = kpi.totalLearners !== undefined ? kpi.totalLearners : 0;
-          document.getElementById("kpi-active-learners").textContent = kpi.activeLearners !== undefined ? kpi.activeLearners : 0;
-          document.getElementById("kpi-at-risk").textContent = kpi.atRiskLearners !== undefined ? kpi.atRiskLearners : 0;
-          document.getElementById("kpi-open-tickets").textContent = kpi.openTickets !== undefined ? kpi.openTickets : 0;
+  /**
+   * Loads cached dashboard insights from backend without forcing a full spreadsheet rebuild.
+   */
+  async function loadDashboardSummary() {
+    try {
+      const response = await DashboardAPI.getSummary();
+      if (response && response.success) {
+        DashboardState.summary = response.data;
+        AppState.dashboard = response.data;
+        renderDashboardStatistics(DashboardState.summary);
+      }
+    } catch (err) {
+      console.error("Failed to load dashboard summary:", err);
+    }
+  }
 
-          // Update priority pills
-          const priority = kpi.priority || { High: 0, Medium: 0, Low: 0 };
-          const highPill = document.getElementById("pill-priority-high");
-          const mediumPill = document.getElementById("pill-priority-medium");
-          const lowPill = document.getElementById("pill-priority-low");
-          if (highPill) highPill.textContent = `High: ${priority.High || 0}`;
-          if (mediumPill) mediumPill.textContent = `Medium: ${priority.Medium || 0}`;
-          if (lowPill) lowPill.textContent = `Low: ${priority.Low || 0}`;
-
-          // Render activities lists
-          const activityFeedList = document.getElementById("activity-feed-list");
-          if (activityFeedList) {
-            if (!response.data.recentActivity || response.data.recentActivity.length === 0) {
-              activityFeedList.innerHTML = `<li class="empty-feed">No recorded audited actions yet.</li>`;
-            } else {
-              activityFeedList.innerHTML = response.data.recentActivity.map(act => {
-                let formattedTime = "";
-                if (act.Timestamp) {
-                  // Format Timestamp nicely if it comes as date string or date object
-                  const date = new Date(act.Timestamp);
-                  if (!isNaN(date.getTime())) {
-                    formattedTime = date.toLocaleString();
-                  } else {
-                    formattedTime = String(act.Timestamp);
-                  }
-                }
-                return `
-                  <li>
-                    <strong>${act.Action || ""}</strong><br>
-                    <small style="color: var(--grey);">${formattedTime}</small>
-                  </li>
-                `;
-              }).join("");
-            }
-          }
-
-          if (isManualRefresh) {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            showToast(`Dashboard refreshed successfully.<br>Last updated: ${timeStr}`, "success");
-          }
-        } else {
-          showToast("Failed to refresh dashboard: " + (response.errors ? response.errors.join(", ") : response.message), "error");
-        }
-      })
-      .withFailureHandler(err => {
-        if (isManualRefresh) {
-          if (refreshIcon) refreshIcon.classList.remove("spin-animation");
-          if (refreshBtn) refreshBtn.disabled = false;
-        }
-        showToast("Error updating dashboard: " + err.message, "error");
-      })
-      .apiGetDashboardMetrics();
+  /**
+   * Backwards compatible routing wrapper for fetchDashboardMetrics.
+   */
+  function fetchDashboardMetrics(isManualRefresh = false) {
+    if (isManualRefresh) {
+      refreshDashboardStatistics(true);
+    } else {
+      loadDashboardSummary();
+    }
   }
 
   /**
