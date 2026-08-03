@@ -373,30 +373,6 @@ var DashboardModule = (function() {
         .build();
       sheet.insertChart(trendChart);
 
-      // 5.5 Learner Directory & Filter Center starting at A44
-      sheet.getRange("A44").setValue("LEARNER DIRECTORY & SUCCESS FILTER CENTER").setFontSize(12).setFontWeight("bold").setFontColor("#152848");
-
-      // Seed cell A45 with query formula to fetch active learners
-      sheet.getRange("A45").setFormula("=QUERY(Learners!A1:P, \"SELECT A, B, C, D, E, G, H, J, N WHERE P = 'FALSE'\", 1)");
-
-      // Format headers of query result range at A45:I45
-      sheet.getRange("A45:I45")
-        .setBackground(CONFIG.COLORS.PRIMARY)
-        .setFontColor("#FFFFFF")
-        .setFontWeight("bold");
-
-      // Apply native sheet filter for instant ad-hoc filtering
-      try {
-        var existingFilter = sheet.getFilter();
-        if (existingFilter) {
-          existingFilter.remove();
-        }
-        var filterRange = sheet.getRange("A45:I1000");
-        filterRange.createFilter();
-      } catch (fErr) {
-        Logger.log("Could not establish native sheet filter: " + fErr.message);
-      }
-
       // 6. Automatically resize all columns on Dashboard sheet to look gorgeous
       var lastCol = sheet.getLastColumn();
       if (lastCol > 0) {
