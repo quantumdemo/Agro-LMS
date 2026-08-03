@@ -64,8 +64,11 @@ const PlaceholderEngineMock = {
     if (!templateStr) return "";
     let result = templateStr;
     for (let key in replacements) {
-      let regex = new RegExp(`{{${key}}}`, "g");
-      result = result.replace(regex, replacements[key] || "");
+      // Escape special regex characters in keys like Progress%
+      let escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      let regex = new RegExp(`{{${escapedKey}}}`, "g");
+      let val = replacements[key] !== null && replacements[key] !== undefined ? replacements[key] : "";
+      result = result.replace(regex, val);
     }
     return result;
   }
@@ -129,12 +132,19 @@ function runTests() {
 
   // Test 3: Placeholder Dynamic Substitutions
   try {
-    const template = "Hello {{FullName}}, welcome to {{ProgramName}}! Your ID is {{LearnerID}}.";
-    const vars = { FullName: "Aster Aweke", ProgramName: "Agritech", LearnerID: "LRN-100200" };
+    const template = "Hello {{FullName}}, welcome to {{ProgramName}}! Your ID is {{LearnerID}}. Progress: {{Progress%}} (Raw: {{Progress%_Raw}}). Phone: {{Phone}}.";
+    const vars = {
+      FullName: "Aster Aweke",
+      ProgramName: "Agritech",
+      LearnerID: "LRN-100200",
+      "Progress%": "85%",
+      "Progress%_Raw": 0.85,
+      Phone: "+1234567"
+    };
     const res = PlaceholderEngineMock.substitutePlaceholders(template, vars);
-    const expected = "Hello Aster Aweke, welcome to Agritech! Your ID is LRN-100200.";
+    const expected = "Hello Aster Aweke, welcome to Agritech! Your ID is LRN-100200. Progress: 85% (Raw: 0.85). Phone: +1234567.";
     if (res === expected) {
-      console.log("✅ PASS: Substitution placeholder engine matches and binds custom dynamic variables.");
+      console.log("✅ PASS: Substitution placeholder engine matches and binds custom dynamic variables including progress formatting and custom column headers.");
     } else {
       console.error(`❌ FAIL: Text template replacement mismatch.\nExpected: ${expected}\nGot: ${res}`);
       passed = false;

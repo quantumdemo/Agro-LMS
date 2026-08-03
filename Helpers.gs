@@ -94,7 +94,9 @@ function substitutePlaceholders(templateStr, replacements) {
   for (var key in replacements) {
     if (replacements.hasOwnProperty(key)) {
       var val = replacements[key] !== null && replacements[key] !== undefined ? replacements[key] : "";
-      var regex = new RegExp("{{" + key + "}}", "g");
+      // Escape special characters for safe regular expression matching
+      var escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      var regex = new RegExp("{{" + escapedKey + "}}", "g");
       result = result.replace(regex, val);
     }
   }

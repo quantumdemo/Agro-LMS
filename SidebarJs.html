@@ -149,7 +149,12 @@
   function updateTicketLearnerDropdown() {
     const tickLearnerSelect = document.getElementById("form-ticket-learner");
     if (tickLearnerSelect) {
-      tickLearnerSelect.innerHTML = AppState.learners.map(l => `<option value="${l.LearnerID}">${l.FullName} (${l.LearnerID})</option>`).join("");
+      const activeLearners = AppState.learners.filter(l => {
+        const isArchived = l.IsArchived === "TRUE" || l.IsArchived === true;
+        const isCompleted = l.StatusID === "ST02" || String(l.StatusID).toLowerCase() === "completed";
+        return !isArchived && !isCompleted;
+      });
+      tickLearnerSelect.innerHTML = activeLearners.map(l => `<option value="${l.LearnerID}">${l.FullName} (${l.LearnerID})</option>`).join("");
     }
   }
 
@@ -379,10 +384,19 @@
       .withSuccessHandler(response => {
         if (response.success) {
           const kpi = response.data.kpis;
-          document.getElementById("kpi-total-learners").textContent = kpi.totalLearners;
-          document.getElementById("kpi-active-learners").textContent = kpi.activeLearners;
-          document.getElementById("kpi-at-risk").textContent = kpi.atRiskLearners;
-          document.getElementById("kpi-open-tickets").textContent = kpi.openTickets;
+          document.getElementById("kpi-total-learners").textContent = kpi.totalLearners || 0;
+          document.getElementById("kpi-active-learners").textContent = kpi.activeLearners || 0;
+          document.getElementById("kpi-at-risk").textContent = kpi.atRiskLearners || 0;
+          document.getElementById("kpi-open-tickets").textContent = kpi.openTickets || 0;
+
+          // Update priority pills
+          const priority = kpi.priority || { High: 0, Medium: 0, Low: 0 };
+          const highPill = document.getElementById("pill-priority-high");
+          const mediumPill = document.getElementById("pill-priority-medium");
+          const lowPill = document.getElementById("pill-priority-low");
+          if (highPill) highPill.textContent = `High: ${priority.High || 0}`;
+          if (mediumPill) mediumPill.textContent = `Medium: ${priority.Medium || 0}`;
+          if (lowPill) lowPill.textContent = `Low: ${priority.Low || 0}`;
 
           // Render activities lists
           const activityFeedList = document.getElementById("activity-feed-list");
@@ -391,10 +405,20 @@
               activityFeedList.innerHTML = `<li class="empty-feed">No recorded audited actions yet.</li>`;
             } else {
               activityFeedList.innerHTML = response.data.recentActivity.map(act => {
+                let formattedTime = "";
+                if (act.Timestamp) {
+                  // Format Timestamp nicely if it comes as date string or date object
+                  const date = new Date(act.Timestamp);
+                  if (!isNaN(date.getTime())) {
+                    formattedTime = date.toLocaleString();
+                  } else {
+                    formattedTime = String(act.Timestamp);
+                  }
+                }
                 return `
                   <li>
-                    <strong>[${act.Module}] ${act.Action}</strong> - ${act.Details}<br>
-                    <small style="color: var(--grey);">${act.Timestamp}</small>
+                    <strong>${act.Action || ""}</strong><br>
+                    <small style="color: var(--grey);">${formattedTime}</small>
                   </li>
                 `;
               }).join("");
@@ -525,25 +549,57 @@
    * Action button hooks.
    */
   function bindActionTriggers() {
-    // Search Button Click (manual search trigger for reliable execution)
+    // Debounce helper for instant reactive searches
+    function debounce(func, wait) {
+      let timeout;
+      return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+      };
+    }
+
+    // Reactive handler to update table on search/filter changes
+    const applyReactiveFilters = () => {
+      const searchInput = document.getElementById("learner-search");
+      AppState.ui.searchQuery = searchInput ? searchInput.value.trim() : "";
+
+      const filterProg = document.getElementById("learner-filter-program");
+      const filterStatus = document.getElementById("learner-filter-status");
+      const filterOfficer = document.getElementById("learner-filter-officer");
+
+      AppState.ui.filterProgram = filterProg ? filterProg.value : "";
+      AppState.ui.filterStatus = filterStatus ? filterStatus.value : "";
+      AppState.ui.filterOfficer = filterOfficer ? filterOfficer.value : "";
+
+      AppState.ui.pagination.page = 1;
+      renderLearnersTable();
+    };
+
+    // Bind event listeners reactively
+    const searchInput = document.getElementById("learner-search");
+    if (searchInput) {
+      searchInput.addEventListener("input", debounce(applyReactiveFilters, 250));
+    }
+
+    const filterProg = document.getElementById("learner-filter-program");
+    if (filterProg) {
+      filterProg.addEventListener("change", applyReactiveFilters);
+    }
+
+    const filterStatus = document.getElementById("learner-filter-status");
+    if (filterStatus) {
+      filterStatus.addEventListener("change", applyReactiveFilters);
+    }
+
+    const filterOfficer = document.getElementById("learner-filter-officer");
+    if (filterOfficer) {
+      filterOfficer.addEventListener("change", applyReactiveFilters);
+    }
+
+    // Hide manual trigger search button if it exists or reuse it
     const searchTriggerBtn = document.getElementById("learner-search-trigger-btn");
     if (searchTriggerBtn) {
-      searchTriggerBtn.addEventListener("click", () => {
-        const searchInput = document.getElementById("learner-search");
-        AppState.ui.searchQuery = searchInput ? searchInput.value : "";
-
-        const filterProg = document.getElementById("learner-filter-program");
-        const filterStatus = document.getElementById("learner-filter-status");
-        const filterOfficer = document.getElementById("learner-filter-officer");
-
-        AppState.ui.filterProgram = filterProg ? filterProg.value : "";
-        AppState.ui.filterStatus = filterStatus ? filterStatus.value : "";
-        AppState.ui.filterOfficer = filterOfficer ? filterOfficer.value : "";
-
-        AppState.ui.pagination.page = 1;
-        renderLearnersTable();
-        showToast("Filter/Search Applied", "success");
-      });
+      searchTriggerBtn.style.display = "none";
     }
 
     // Sort Selection Listener
