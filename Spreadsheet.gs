@@ -35,7 +35,15 @@ var SpreadsheetService = (function() {
         for (var c = 0; c < headers.length; c++) {
           var key = headers[c];
           if (key) {
-            obj[key] = row[c];
+            var val = row[c];
+            if (val instanceof Date) {
+              if (val.getHours() === 0 && val.getMinutes() === 0 && val.getSeconds() === 0 && val.getMilliseconds() === 0) {
+                val = formatDate(val);
+              } else {
+                val = formatDate(val) + " " + val.toLocaleTimeString();
+              }
+            }
+            obj[key] = val;
           }
         }
         records.push(obj);
