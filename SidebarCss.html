@@ -516,4 +516,35 @@ body {
 .text-center {
   text-align: center;
 }
+
+/* Spin animation & Refresh button */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-animation {
+  animation: spin 1s linear infinite;
+}
+
+.refresh-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 50%;
+  transition: var(--transition);
+}
+
+.refresh-btn:hover {
+  background-color: rgba(38, 173, 56, 0.1);
+}
+
+.refresh-btn:active {
+  transform: scale(0.9);
+}
 </style>
