@@ -37,15 +37,10 @@
     }
   };
 
-  // Client-Side Cache State matching Server State
-  const DashboardState = {
-    summary: null
-  };
-
   // Promisified Dashboard API Client Manager
   const DashboardAPI = {
     /**
-     * Triggers backend refresh and fetches latest KPI statistics.
+     * Triggers backend refresh.
      * @returns {Promise<Object>} The API success envelope
      */
     refresh: function() {
@@ -54,19 +49,6 @@
           .withSuccessHandler(resolve)
           .withFailureHandler(reject)
           .apiRefreshDashboard();
-      });
-    },
-
-    /**
-     * Retrieves the latest cached dashboard insights without forcing a rebuild.
-     * @returns {Promise<Object>} The API success envelope
-     */
-    getSummary: function() {
-      return new Promise((resolve, reject) => {
-        google.script.run
-          .withSuccessHandler(resolve)
-          .withFailureHandler(reject)
-          .apiGetDashboardMetrics();
       });
     }
   };
@@ -104,10 +86,6 @@
       targetPanel.classList.add("active");
       AppState.ui.activeTab = tabId;
 
-      // Auto reload metrics on dashboard load
-      if (tabId === "dashboard-tab") {
-        fetchDashboardMetrics();
-      }
     }
   }
 
@@ -131,7 +109,6 @@
           fetchLearners();
           fetchTickets();
           fetchCertificates();
-          fetchDashboardMetrics();
         } else {
           showToast("Failed loading system settings: " + response.errors.join(", "), "error");
         }
@@ -151,11 +128,6 @@
     const tickCatSelect = document.getElementById("form-ticket-category");
     const tickOffSelect = document.getElementById("form-ticket-officer");
 
-    // Dynamic Filter Dropdowns in Learners tab
-    const filterProg = document.getElementById("learner-filter-program");
-    const filterStatus = document.getElementById("learner-filter-status");
-    const filterOfficer = document.getElementById("learner-filter-officer");
-
     if (progSelect) {
       progSelect.innerHTML = AppState.programs.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
     }
@@ -167,16 +139,6 @@
     }
     if (tickOffSelect) {
       tickOffSelect.innerHTML = AppState.officers.map(o => `<option value="${o.id}">${o.name}</option>`).join("");
-    }
-
-    if (filterProg) {
-      filterProg.innerHTML = `<option value="">All Programs</option>` + AppState.programs.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
-    }
-    if (filterStatus) {
-      filterStatus.innerHTML = `<option value="">All Statuses</option>` + AppState.statuses.map(s => `<option value="${s.id}">${s.description}</option>`).join("");
-    }
-    if (filterOfficer) {
-      filterOfficer.innerHTML = `<option value="">All Officers</option>` + AppState.officers.map(o => `<option value="${o.id}">${o.name}</option>`).join("");
     }
   }
 
@@ -214,53 +176,22 @@
     const listBody = document.getElementById("learners-list-body");
     if (!listBody) return;
 
-    const query = AppState.ui.searchQuery.toLowerCase();
-
-    // 1. Filter
+    // Filter to active (non-archived) learners only
     let filtered = AppState.learners.filter(l => {
-      // IsArchived check
       const isArchived = l.IsArchived === "TRUE" || l.IsArchived === true;
-      if (AppState.ui.showArchived) {
-        if (!isArchived) return false;
-      } else {
-        if (isArchived) return false;
-      }
-
-      // Search query filter
-      const matchesSearch = !query ||
-                            String(l.FullName).toLowerCase().includes(query) ||
-                            String(l.Email).toLowerCase().includes(query) ||
-                            String(l.Phone).toLowerCase().includes(query) ||
-                            String(l.LearnerID).toLowerCase().includes(query);
-
-      // Category filters
-      const matchesProg = !AppState.ui.filterProgram || l.ProgramID === AppState.ui.filterProgram;
-      const matchesStatus = !AppState.ui.filterStatus || l.StatusID === AppState.ui.filterStatus;
-      const matchesOfficer = !AppState.ui.filterOfficer || l.OfficerID === AppState.ui.filterOfficer;
-
-      return matchesSearch && matchesProg && matchesStatus && matchesOfficer;
+      return !isArchived;
     });
 
-    // 2. Sort
+    // Sort alphabetically by FullName
     filtered.sort((a, b) => {
-      let valA = a[AppState.ui.sortKey];
-      let valB = b[AppState.ui.sortKey];
-
-      // Safe numeric conversion
-      if (AppState.ui.sortKey === "Progress%") {
-        valA = parseFloat(valA || 0);
-        valB = parseFloat(valB || 0);
-      } else {
-        valA = String(valA || "").toLowerCase();
-        valB = String(valB || "").toLowerCase();
-      }
-
-      if (valA < valB) return AppState.ui.sortAsc ? -1 : 1;
-      if (valA > valB) return AppState.ui.sortAsc ? 1 : -1;
+      let valA = String(a.FullName || "").toLowerCase();
+      let valB = String(b.FullName || "").toLowerCase();
+      if (valA < valB) return -1;
+      if (valA > valB) return 1;
       return 0;
     });
 
-    // 3. Paginate
+    // Paginate
     const page = AppState.ui.pagination.page;
     const size = AppState.ui.pagination.pageSize;
     const totalPages = Math.ceil(filtered.length / size) || 1;
@@ -275,7 +206,7 @@
     document.getElementById("page-info-label").textContent = `Page ${page} of ${totalPages}`;
 
     if (paginated.length === 0) {
-      listBody.innerHTML = `<tr><td colspan="4" class="text-center">No learners found matching the filters.</td></tr>`;
+      listBody.innerHTML = `<tr><td colspan="4" class="text-center">No active learners found.</td></tr>`;
       return;
     }
 
@@ -411,54 +342,6 @@
   }
 
   /**
-   * Dedicated DOM update handler for KPI cards, priority pills, and activities feed.
-   */
-  function renderDashboardStatistics(data) {
-    if (!data || !data.kpis) return;
-
-    const kpi = data.kpis;
-    document.getElementById("kpi-total-learners").textContent = kpi.totalLearners !== undefined ? kpi.totalLearners : 0;
-    document.getElementById("kpi-active-learners").textContent = kpi.activeLearners !== undefined ? kpi.activeLearners : 0;
-    document.getElementById("kpi-at-risk").textContent = kpi.atRiskLearners !== undefined ? kpi.atRiskLearners : 0;
-    document.getElementById("kpi-open-tickets").textContent = kpi.openTickets !== undefined ? kpi.openTickets : 0;
-
-    // Update priority pills
-    const priority = kpi.priority || { High: 0, Medium: 0, Low: 0 };
-    const highPill = document.getElementById("pill-priority-high");
-    const mediumPill = document.getElementById("pill-priority-medium");
-    const lowPill = document.getElementById("pill-priority-low");
-    if (highPill) highPill.textContent = `High: ${priority.High || 0}`;
-    if (mediumPill) mediumPill.textContent = `Medium: ${priority.Medium || 0}`;
-    if (lowPill) lowPill.textContent = `Low: ${priority.Low || 0}`;
-
-    // Render activities lists
-    const activityFeedList = document.getElementById("activity-feed-list");
-    if (activityFeedList) {
-      if (!data.recentActivity || data.recentActivity.length === 0) {
-        activityFeedList.innerHTML = `<li class="empty-feed">No recorded audited actions yet.</li>`;
-      } else {
-        activityFeedList.innerHTML = data.recentActivity.map(act => {
-          let formattedTime = "";
-          if (act.Timestamp) {
-            const date = new Date(act.Timestamp);
-            if (!isNaN(date.getTime())) {
-              formattedTime = date.toLocaleString();
-            } else {
-              formattedTime = String(act.Timestamp);
-            }
-          }
-          return `
-            <li>
-              <strong>${act.Action || ""}</strong><br>
-              <small style="color: var(--grey);">${formattedTime}</small>
-            </li>
-          `;
-        }).join("");
-      }
-    }
-  }
-
-  /**
    * Refreshes the spreadsheet data from the client, updates local state, and immediately renders.
    */
   async function refreshDashboardStatistics(isManualRefresh = false) {
@@ -468,7 +351,7 @@
     if (isManualRefresh) {
       if (refreshIcon) refreshIcon.classList.add("spin-animation");
       if (refreshBtn) refreshBtn.disabled = true;
-      showToast("Refreshing Dashboard metrics...", "info");
+      showToast("Refreshing Dashboard worksheet...", "info");
     }
 
     try {
@@ -480,21 +363,14 @@
       }
 
       if (response && response.success) {
-        // Update client-side cached state
-        DashboardState.summary = response.data;
-        AppState.dashboard = response.data; // Align AppState as well
-
-        // Render to DOM immediately
-        renderDashboardStatistics(DashboardState.summary);
-
         if (isManualRefresh) {
           const now = new Date();
           const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          showToast(`Dashboard refreshed successfully.<br>Last updated: ${timeStr}`, "success");
+          showToast(`Dashboard worksheet refreshed successfully.<br>Last updated: ${timeStr}`, "success");
         }
       } else {
         const errorMsg = response && response.errors ? response.errors.join(", ") : (response ? response.message : "Unknown server error");
-        showToast("Failed to refresh dashboard: " + errorMsg, "error");
+        showToast("Failed to refresh dashboard worksheet: " + errorMsg, "error");
       }
     } catch (err) {
       if (isManualRefresh) {
@@ -505,32 +381,6 @@
     }
   }
 
-  /**
-   * Loads cached dashboard insights from backend without forcing a full spreadsheet rebuild.
-   */
-  async function loadDashboardSummary() {
-    try {
-      const response = await DashboardAPI.getSummary();
-      if (response && response.success) {
-        DashboardState.summary = response.data;
-        AppState.dashboard = response.data;
-        renderDashboardStatistics(DashboardState.summary);
-      }
-    } catch (err) {
-      console.error("Failed to load dashboard summary:", err);
-    }
-  }
-
-  /**
-   * Backwards compatible routing wrapper for fetchDashboardMetrics.
-   */
-  function fetchDashboardMetrics(isManualRefresh = false) {
-    if (isManualRefresh) {
-      refreshDashboardStatistics(true);
-    } else {
-      loadDashboardSummary();
-    }
-  }
 
   /**
    * Form Actions submissions and modal routing.
@@ -578,7 +428,6 @@
 
         // Dynamic re-fetch and refresh views instantly
         fetchLearners();
-        fetchDashboardMetrics();
       } else {
         showToast("Validation Error: " + response.errors.join("<br>"), "error");
       }
@@ -610,7 +459,6 @@
           closeModal("ticket-modal");
           fetchTickets();
           fetchLearners(); // reload since support status has changed
-          fetchDashboardMetrics();
         } else {
           showToast("Error creating ticket: " + response.errors.join(", "), "error");
         }
@@ -625,7 +473,6 @@
         if (response.success) {
           showToast("Learner successfully archived.", "success");
           fetchLearners();
-          fetchDashboardMetrics();
         } else {
           showToast(response.message, "error");
         }
@@ -640,7 +487,6 @@
         if (response.success) {
           showToast("Learner successfully restored.", "success");
           fetchLearners();
-          fetchDashboardMetrics();
         } else {
           showToast(response.message, "error");
         }
@@ -662,32 +508,12 @@
     }
 
 
-    // Sort Selection Listener
-    const sortSelect = document.getElementById("learner-sort-select");
-    if (sortSelect) {
-      sortSelect.addEventListener("change", (e) => {
-        const parts = e.target.value.split(":");
-        AppState.ui.sortKey = parts[0];
-        AppState.ui.sortAsc = parts[1] === "asc";
-        renderLearnersTable();
-      });
-    }
-
-    // Show Archived Toggle
-    const archivedToggle = document.getElementById("learner-archived-toggle");
-    if (archivedToggle) {
-      archivedToggle.addEventListener("change", (e) => {
-        AppState.ui.showArchived = e.target.checked;
-        AppState.ui.pagination.page = 1;
-        renderLearnersTable();
-      });
-    }
 
     // Refresh Dashboard click event
     const refreshDashBtn = document.getElementById("refresh-dashboard-btn");
     if (refreshDashBtn) {
       refreshDashBtn.addEventListener("click", () => {
-        fetchDashboardMetrics(true);
+        refreshDashboardStatistics(true);
       });
     }
 
