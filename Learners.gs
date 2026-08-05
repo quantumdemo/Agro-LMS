@@ -106,25 +106,45 @@ var LearnerModule = (function() {
         return createFailureResponse("Validation failed.", errors);
       }
 
+      // Fetch the existing learner record to support default/fallback fields
+      var learners = SpreadsheetService.readAll(CONFIG.SHEETS.LEARNERS);
+      var existingLearner = null;
+      for (var i = 0; i < learners.length; i++) {
+        if (String(learners[i].LearnerID).trim() === String(learnerID).trim()) {
+          existingLearner = learners[i];
+          break;
+        }
+      }
+
+      if (!existingLearner) {
+        return createFailureResponse("Learner record not found.");
+      }
+
       var updatedFields = {
-        "FullName": String(learnerData.FullName).trim(),
-        "Email": String(learnerData.Email).trim(),
-        "Phone": String(learnerData.Phone).trim(),
-        "ProgramID": String(learnerData.ProgramID).trim(),
-        "CurrentModule": String(learnerData.CurrentModule).trim(),
-        "Progress%": parseNumber(learnerData["Progress%"], 0.0),
-        "StatusID": String(learnerData.StatusID).trim(),
-        "CertificateStatusID": String(learnerData.CertificateStatusID).trim(),
-        "SupportStatusID": String(learnerData.SupportStatusID).trim(),
-        "OfficerID": String(learnerData.OfficerID).trim(),
-        "Notes": String(learnerData.Notes || "").trim(),
+        "FullName": learnerData.FullName !== undefined ? String(learnerData.FullName).trim() : existingLearner.FullName,
+        "Email": learnerData.Email !== undefined ? String(learnerData.Email).trim() : existingLearner.Email,
+        "Phone": learnerData.Phone !== undefined ? String(learnerData.Phone).trim() : existingLearner.Phone,
+        "ProgramID": learnerData.ProgramID !== undefined ? String(learnerData.ProgramID).trim() : existingLearner.ProgramID,
+        "CurrentModule": learnerData.CurrentModule !== undefined ? String(learnerData.CurrentModule).trim() : existingLearner.CurrentModule,
+        "Progress%": learnerData["Progress%"] !== undefined ? parseNumber(learnerData["Progress%"], 0.0) : parseNumber(existingLearner["Progress%"], 0.0),
+        "StatusID": learnerData.StatusID !== undefined ? String(learnerData.StatusID).trim() : existingLearner.StatusID,
+        "CertificateStatusID": learnerData.CertificateStatusID !== undefined ? String(learnerData.CertificateStatusID).trim() : existingLearner.CertificateStatusID,
+        "SupportStatusID": learnerData.SupportStatusID !== undefined ? String(learnerData.SupportStatusID).trim() : existingLearner.SupportStatusID,
+        "OfficerID": learnerData.OfficerID !== undefined ? String(learnerData.OfficerID).trim() : existingLearner.OfficerID,
+        "Notes": learnerData.Notes !== undefined ? String(learnerData.Notes || "").trim() : existingLearner.Notes,
         "LastContact": formatDate(new Date())
       };
 
       // Trigger automatic progress completed transition
-      if (updatedFields["Progress%"] >= 1.0 && updatedFields["StatusID"] === "ST01") {
-        updatedFields["StatusID"] = "ST02"; // Auto Complete
-        updatedFields["CertificateStatusID"] = "C02"; // Auto Eligible
+      var isAutoCompleted = false;
+      if (updatedFields["Progress%"] >= 1.0) {
+        if (existingLearner.StatusID !== "ST02") {
+          updatedFields["StatusID"] = "ST02"; // Auto Complete
+          isAutoCompleted = true;
+        }
+        if (existingLearner.CertificateStatusID !== "C03") {
+          updatedFields["CertificateStatusID"] = "C02"; // Auto Eligible
+        }
       }
 
       var success = SpreadsheetService.updateRecord(
@@ -147,14 +167,17 @@ var LearnerModule = (function() {
         "SUCCESS"
       );
 
-      // Trigger completion congrats email automatically if progress reaches 100%
-      if (updatedFields["Progress%"] >= 1.0) {
-        EmailService.sendTemplateEmail(updatedFields.Email, "Certificate", {
-          "FullName": updatedFields.FullName,
-          "ProgramName": updatedFields.ProgramID,
-          "CertificateID": "Pending Issuance",
-          "CertificateLink": "N/A"
-        });
+      // Trigger automatic certificate issuance and email if progress reaches 1.0 (100%) and not already issued
+      if (updatedFields["Progress%"] >= 1.0 && existingLearner.CertificateStatusID !== "C03") {
+        try {
+          var certResult = CertificateModule.issueCertificate(learnerID, updatedFields.ProgramID);
+          if (certResult.success) {
+            // Update local memory so that the API returned payload contains C03 (Issued) status
+            updatedFields["CertificateStatusID"] = "C03";
+          }
+        } catch (eCert) {
+          Logger.log("Auto certificate issuance failed in updateLearner: " + eCert.message);
+        }
       }
 
       return createSuccessResponse("Learner updated successfully.", { learner: updatedFields });
